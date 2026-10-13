@@ -109,7 +109,11 @@ func lumenLabs() teamSpec {
 		channels: []channelSpec{
 			{id: chGeneral, name: "general", typ: "channel", section: "Company", sectionOrder: 2, msgs: []msgSpec{
 				{user: uLena, ago: 26 * hr, text: "Reminder: all-hands tomorrow at 10am. Agenda is in the doc, add your questions by end of day :memo:",
-					reactions: []reactSpec{reacts("eyes", uSam, uTom), reacts("thumbsup", uPriya)}},
+					reactions: []reactSpec{reacts("eyes", uSam, uTom), reacts("thumbsup", uPriya)},
+					replies: []msgSpec{
+						{user: uAlex, ago: 26*hr - 12*mn, text: "Added one about the Q4 roadmap"},
+						{user: uLena, ago: 26*hr - 15*mn, text: "On the list, thanks"},
+					}},
 				{user: uTom, ago: 25 * hr, text: "The coffee machine on 3 is fixed :coffee: :tada:",
 					reactions: []reactSpec{reacts("tada", uPriya, uMaya, uDiego)}},
 				{user: uLena, ago: 3 * hr, text: "Please welcome <@U0NOOR> to the platform team! :wave:",
@@ -125,6 +129,7 @@ func lumenLabs() teamSpec {
 					reactions: []reactSpec{reacts("eyes", uSam), reacts("raised_hands", uJonas, uAlex)},
 					replies: []msgSpec{
 						{user: uSam, ago: 5*hr - 5*mn, text: "Nice catch. Can we add a case for the DST boundary?"},
+						{user: uAlex, ago: 5*hr - 6*mn, text: "I have a fixture for that from the last one, sending it over"},
 						{user: uPriya, ago: 5*hr - 8*mn, text: "Already on it, pushing in a bit"},
 					}},
 				{user: uSam, ago: 90 * mn, text: "Rate limiter PR is up: *token bucket per workspace*, 50 req/s burst. Reviews welcome :pray:"},

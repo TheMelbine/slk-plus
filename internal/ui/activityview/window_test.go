@@ -5,6 +5,8 @@ import (
 	"maps"
 	"strings"
 	"testing"
+
+	"github.com/gammons/slk/internal/ui/card"
 )
 
 // referenceView is the original, un-windowed View algorithm: render every
@@ -21,7 +23,7 @@ func referenceView(m *Model, height, width int) string {
 		// Not under test here: the empty state doesn't depend on windowing.
 		panic("referenceView: only covers the non-empty body")
 	}
-	separator := blankLine(width)
+	separator := card.BlankLine(width)
 	var lines []string
 	for i, it := range m.items {
 		if i > 0 {
@@ -51,7 +53,7 @@ func referenceView(m *Model, height, width int) string {
 	}
 	visible := append([]string(nil), lines[m.yOffset:end]...)
 	for len(visible) < height {
-		visible = append(visible, blankLine(width))
+		visible = append(visible, card.BlankLine(width))
 	}
 	return strings.Join(visible, "\n")
 }

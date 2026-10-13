@@ -11,14 +11,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/gammons/slk/internal/core"
+	"github.com/gammons/slk/internal/ui/card"
 	"github.com/gammons/slk/internal/ui/messages"
 	"github.com/gammons/slk/internal/ui/styles"
 	"github.com/gammons/slk/internal/usergroups"
-	"github.com/muesli/reflow/truncate"
 )
 
 // cardStride is the number of lines a single rendered thread card occupies
@@ -30,55 +29,6 @@ const (
 	cardStride       = cardContentLines + 1
 )
 
-// Local styles (kept package-private so we don't pollute the shared styles
-// package for one panel). Built from the shared color tokens so theme
-// changes still propagate via styles.Apply().
-func mutedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.TextMuted)
-}
-
-func unreadDotStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
-}
-
-// channelNameStyle themes the channel name in a thread card so it remains
-// readable on light themes (where the default foreground is dark on a dark
-// Background panel). Uses the theme's primary/link color, mirroring the
-// sidebar's "channel link" convention.
-func channelNameStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
-}
-
-// thickLeftBorder mirrors the messages package convention: a 1-column-wide
-// left border using "▌". Selected rows render with Accent (green) foreground;
-// non-selected rows render with the panel background so the column is
-// reserved (keeps content alignment uniform) but invisible.
-var thickLeftBorder = lipgloss.Border{Left: "▌"}
-
-func borderInvisStyle() lipgloss.Style {
-	return styles.InvisibleLeftBorder()
-}
-
-// borderSelectStyle returns the bordered style for the selected card.
-// focused drives both the border foreground (Accent vs TextMuted) and
-// the row background (focused tint vs unfocused tint), matching the
-// "you're acting on this" language used by the messages and thread
-// panels.
-func borderSelectStyle(focused bool) lipgloss.Style {
-	return lipgloss.NewStyle().
-		BorderStyle(thickLeftBorder).BorderLeft(true).
-		BorderForeground(styles.SelectionBorderColor(focused)).
-		BorderBackground(styles.SelectionTintColor(focused)).
-		Background(styles.SelectionTintColor(focused))
-}
-
-// borderFillStyle returns the row-fill style for unselected cards
-// (themed Background). Selected cards use a SelectionTintColor fill
-// inside renderCard so the tint reaches the right edge.
-func borderFillStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Background(styles.Background)
-}
-
 // Model holds the threads-list state.
 type Model struct {
 	summaries    []core.ThreadSummary
@@ -86,6 +36,9 @@ type Model struct {
 	channelNames map[string]string
 	userGroups   map[string]string
 	selfUserID   string
+	// avatarFn renders a user's 4x2 avatar; "" while it loads. Nil means
+	// no avatar column at all.
+	avatarFn messages.AvatarFunc
 
 	selected int
 	yOffset  int
@@ -213,6 +166,22 @@ func (m *Model) SetUserGroups(groups map[string]string) {
 		copied = map[string]string{}
 	}
 	m.userGroups = copied
+	m.dirty()
+}
+
+// SetAvatarFunc installs the avatar renderer. Cards get an avatar column
+// once it is set.
+func (m *Model) SetAvatarFunc(fn messages.AvatarFunc) {
+	m.avatarFn = fn
+	m.dirty()
+}
+
+// HandleAvatarReady re-renders the list once a lazily fetched avatar has
+// landed. Empty userID is a no-op.
+func (m *Model) HandleAvatarReady(userID string) {
+	if userID == "" || m.avatarFn == nil {
+		return
+	}
 	m.dirty()
 }
 
@@ -555,7 +524,7 @@ func (m *Model) View(height, width int) string {
 				}
 			}
 		}
-		bannerLine = mutedStyle().Render(bannerText)
+		bannerLine = card.Muted().Render(bannerText)
 		// Pad to full width so the next line starts cleanly.
 		if pad := width - lipgloss.Width(bannerLine); pad > 0 {
 			bannerLine += strings.Repeat(" ", pad)
@@ -571,7 +540,7 @@ func (m *Model) View(height, width int) string {
 	// banner.
 	var body string
 	if len(m.summaries) == 0 {
-		empty := mutedStyle().Render("no threads")
+		empty := card.Muted().Render("no threads")
 		body = lipgloss.Place(width, bodyHeight, lipgloss.Center, lipgloss.Center, empty)
 	} else {
 		// Every card is cardContentLines tall with a separator between
@@ -600,7 +569,7 @@ func (m *Model) View(height, width int) string {
 		}
 		visible := m.renderLines(m.yOffset, end, width)
 		if pad := bodyHeight - len(visible); pad > 0 {
-			filler := blankLine(width)
+			filler := card.BlankLine(width)
 			out := make([]string, 0, bodyHeight)
 			out = append(out, visible...)
 			for i := 0; i < pad; i++ {
@@ -664,106 +633,20 @@ func (m *Model) renderLines(start, end, width int) []string {
 			}
 		}
 		if sep := base + cardContentLines; i < len(m.summaries)-1 && sep >= start && sep < end {
+			// The gap before the first card of an older day carries its
+			// date, so the list reads in days without changing the
+			// stride the windowing and click math rely on.
+			if day := messages.DateFromTS(m.summaries[i+1].LastReplyTS); day != "" && day != messages.DateFromTS(m.summaries[i].LastReplyTS) {
+				out = append(out, card.DayLine(messages.FormatDateSeparator(day), width))
+				continue
+			}
 			if separator == "" {
-				separator = blankLine(width)
+				separator = card.BlankLine(width)
 			}
 			out = append(out, separator)
 		}
 	}
 	return out
-}
-
-// blankLine returns an exactly `width`-column-wide empty line, used both
-// for inter-card separators and bottom padding when the content is shorter
-// than the viewport.
-func blankLine(width int) string {
-	return lipgloss.NewStyle().Width(width).Render("")
-}
-
-// renderCard returns the 3 lines of a single thread row: header, preview,
-// footer. Selection is indicated by a green left border (▌) — the same
-// mechanism used for messages and thread replies. Non-selected rows
-// reserve the same 1-column gutter with a background-colored (invisible)
-// border so column alignment is uniform.
-func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []string {
-	// The left border occupies 1 column; content fills the remainder.
-	contentWidth := width - 1
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
-
-	// Header: <glyph><channel> · <author> · <relTime>  [• if unread]
-	glyph := channelGlyph(s.ChannelType)
-	author := m.resolveUser(s.ParentUserID)
-	relTime := formatRelTime(s.ParentTS)
-	header := glyph + channelNameStyle().Render(s.ChannelName) + "  " + mutedStyle().Render("·") + "  " + author + "  " + mutedStyle().Render("· "+relTime)
-	if s.Unread {
-		header += "  " + unreadDotStyle().Render("●")
-	}
-	header = clipToWidth(header, contentWidth)
-
-	// Preview: "  > <parent text>"; falls back to "(parent not loaded)"
-	// when both ParentText and ParentUserID are empty (cache hasn't seen
-	// the parent yet).
-	var previewBody string
-	if s.ParentText == "" && s.ParentUserID == "" {
-		previewBody = mutedStyle().Render("(parent not loaded)")
-	} else {
-		preview := messages.RenderSlackMarkdownWith(s.ParentText, messages.RenderSlackMarkdownOpts{
-			UserNames:    m.userNames,
-			ChannelNames: m.channelNames,
-			UserGroups:   m.userGroups,
-		})
-		preview = strings.ReplaceAll(preview, "\n", " ")
-		previewMax := contentWidth - 4
-		if previewMax < 0 {
-			previewMax = 0
-		}
-		previewBody = truncate.StringWithTail(preview, uint(previewMax), "…")
-	}
-	previewLine := clipToWidth("  > "+previewBody, contentWidth)
-
-	// Footer: "  N replies · last by <user> <relTime>".
-	replyWord := "replies"
-	if s.ReplyCount == 1 {
-		replyWord = "reply"
-	}
-	lastBy := m.resolveUser(s.LastReplyBy)
-	footerText := "  " + strconv.Itoa(s.ReplyCount) + " " + replyWord + " · last by " + lastBy + " " + formatRelTime(s.LastReplyTS)
-	footerText = clipToWidth(footerText, contentWidth)
-
-	// Pick border + fill (themed Background for unselected; tinted
-	// SelectionTintColor for selected so trailing whitespace carries
-	// the tint to the right edge — same per-variant fill pattern used
-	// in internal/ui/messages/model.go).
-	borderStyle := borderInvisStyle()
-	fill := borderFillStyle().Width(contentWidth)
-	if selected {
-		borderStyle = borderSelectStyle(m.focused)
-		fill = lipgloss.NewStyle().
-			Background(styles.SelectionTintColor(m.focused)).
-			Width(contentWidth)
-	}
-
-	headerOut := borderStyle.Render(fill.Render(header))
-	previewOut := borderStyle.Render(fill.Render(previewLine))
-	footerOut := borderStyle.Render(fill.Foreground(styles.TextMuted).Render(footerText))
-
-	return []string{headerOut, previewOut, footerOut}
-}
-
-// channelGlyph returns the leading glyph for a channel row, matching the
-// sidebar's conventions: "#" for public channels, "◆ " for private channels,
-// "● " for DMs and group DMs.
-func channelGlyph(channelType string) string {
-	switch channelType {
-	case "private":
-		return lipgloss.NewStyle().Foreground(styles.Warning).Render("◆ ")
-	case "dm", "group_dm":
-		return lipgloss.NewStyle().Foreground(styles.TextMuted).Render("● ")
-	default:
-		return "# "
-	}
 }
 
 // resolveUser maps a Slack user ID to a display label: "me" for the current
@@ -781,45 +664,111 @@ func (m *Model) resolveUser(uid string) string {
 	return uid
 }
 
-// formatRelTime parses a Slack-style "1700000000.000000" timestamp and
-// returns a coarse "Nm ago" / "Nh ago" / "Nd ago" string. Empty / unparseable
-// inputs return "".
-func formatRelTime(ts string) string {
-	if ts == "" {
-		return ""
+// glyphStyle colours the leading thread flag: the thread colour on an
+// unread card, muted with the rest of a read one.
+func glyphStyle(unread bool) lipgloss.Style {
+	if !unread {
+		return card.Muted()
 	}
-	secStr := ts
-	if dot := strings.IndexByte(ts, '.'); dot >= 0 {
-		secStr = ts[:dot]
-	}
-	sec, err := strconv.ParseInt(secStr, 10, 64)
-	if err != nil {
-		return ""
-	}
-	d := time.Since(time.Unix(sec, 0))
-	switch {
-	case d < time.Minute:
-		return "now"
-	case d < time.Hour:
-		return strconv.Itoa(int(d/time.Minute)) + "m ago"
-	case d < 24*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + "h ago"
+	return lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
+}
+
+// channelLabel names the thread's conversation the way the Activity feed
+// does: "#name" for a public channel, the sidebar glyph plus name for
+// private channels, DMs and group DMs.
+func channelLabel(s core.ThreadSummary) string {
+	switch s.ChannelType {
+	case "private", "dm", "group_dm":
+		return messages.ChannelGlyph(s.ChannelType) + " " + s.ChannelName
 	default:
-		return strconv.Itoa(int(d/(24*time.Hour))) + "d ago"
+		return "#" + s.ChannelName
 	}
 }
 
-// clipToWidth truncates an already-styled string to at most `width` display
-// columns (using a trailing ellipsis), but does NOT pad short strings.
-// Padding is left to the caller's width-bounded style.Render so background
-// fills correctly. lipgloss.Width measures display columns even with
-// embedded ANSI escapes.
-func clipToWidth(s string, width int) string {
-	if width <= 0 {
-		return ""
+// renderCard returns the three lines of one thread card:
+//
+//	⚑ <author> · <channel>                    <time of the last reply>
+//	  <parent text>
+//	  N replies · last by <user>
+//
+// led by the parent author's avatar when a renderer is set. An unread
+// card is drawn in the full text colour with a coloured flag and a bold
+// author; a read card is muted as a whole, so the eye lands on what is
+// new. Only a mention of you keeps the mention highlight in the preview.
+// Selection is a left border (▌) on all three lines.
+func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []string {
+	// The left border occupies 1 column; content fills the remainder.
+	contentWidth := width - 1 - card.AvatarWidthOf(m.avatarFn)
+	if contentWidth < 1 {
+		contentWidth = 1
 	}
-	if lipgloss.Width(s) <= width {
-		return s
+	avatarCol := card.AvatarColumn(m.avatarFn, s.ParentUserID, cardContentLines)
+	if avatarCol == nil {
+		avatarCol = make([]string, cardContentLines)
 	}
-	return truncate.StringWithTail(s, uint(width), "…")
+
+	textStyle, nameStyle, fg := card.Muted(), card.Muted(), messages.MutedFgANSI()
+	if s.Unread {
+		textStyle, nameStyle, fg = card.Body(), card.Author(), messages.FgANSI()
+	}
+
+	left := glyphStyle(s.Unread).Render("⚑") + " "
+	if author := m.resolveUser(s.ParentUserID); author != "" {
+		left += nameStyle.Render(author) + card.Muted().Render(" · ")
+	}
+	left += card.Muted().Render(channelLabel(s))
+	right := ""
+	if rel := card.RelTime(s.LastReplyTS); rel != "" {
+		right = card.Muted().Render(rel)
+	}
+	line1 := card.LayoutLine(left, right, contentWidth)
+	if !s.Unread {
+		line1 = card.RecolorSGR(line1, messages.FgANSI(), messages.MutedFgANSI())
+	}
+
+	// Preview: the parent, rendered like everywhere else and folded onto
+	// one line (a card has exactly cardContentLines lines). Falls back to
+	// "(parent not loaded)" when the cache hasn't seen the parent yet.
+	var preview string
+	if s.ParentText == "" && s.ParentUserID == "" {
+		preview = card.Muted().Render("(parent not loaded)")
+	} else {
+		preview = messages.RenderSlackMarkdownWith(s.ParentText, messages.RenderSlackMarkdownOpts{
+			UserNames:    m.userNames,
+			ChannelNames: m.channelNames,
+			UserGroups:   m.userGroups,
+			SelfUserID:   m.selfUserID,
+		})
+		preview = strings.ReplaceAll(preview, "\n", " ")
+		if !s.Unread {
+			// The renderer re-applies the theme text colour after each
+			// span and gives bold/italic an explicit one; a read card
+			// wants all of that plain text muted.
+			preview = card.RecolorSGR(preview, messages.FgANSI(), messages.MutedFgANSI())
+		}
+		if selected {
+			// The renderer restores the theme background after each
+			// styled span; on the selected card that must be the tint.
+			preview = messages.RepaintBgToSelectionTint(preview, m.focused)
+		}
+		preview = textStyle.Render(preview)
+	}
+	line2 := "  " + preview
+
+	replyWord := "replies"
+	if s.ReplyCount == 1 {
+		replyWord = "reply"
+	}
+	footer := "  " + strconv.Itoa(s.ReplyCount) + " " + replyWord
+	if lastBy := m.resolveUser(s.LastReplyBy); lastBy != "" {
+		footer += " · last by " + lastBy
+	}
+	line3 := card.Muted().Render(footer)
+
+	w := contentWidth + card.AvatarWidthOf(m.avatarFn)
+	return []string{
+		card.WrapLine(avatarCol[0]+line1, w, selected, m.focused, fg),
+		card.WrapLine(avatarCol[1]+line2, w, selected, m.focused, fg),
+		card.WrapLine(avatarCol[2]+line3, w, selected, m.focused, fg),
+	}
 }

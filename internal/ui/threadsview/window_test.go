@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gammons/slk/internal/cache"
+	"github.com/gammons/slk/internal/ui/card"
 )
 
 // manySummaries returns n distinct summaries whose timestamps are far
@@ -45,7 +46,7 @@ func referenceView(m *Model, height, width int) string {
 		// Not under test here: these branches don't depend on windowing.
 		panic("referenceView: only covers the non-empty, no-banner body")
 	}
-	separator := blankLine(width)
+	separator := card.BlankLine(width)
 	var lines []string
 	for i, s := range m.summaries {
 		if i > 0 {
@@ -74,7 +75,7 @@ func referenceView(m *Model, height, width int) string {
 	}
 	visible := append([]string(nil), lines[m.yOffset:end]...)
 	for len(visible) < height {
-		visible = append(visible, blankLine(width))
+		visible = append(visible, card.BlankLine(width))
 	}
 	return strings.Join(visible, "\n")
 }

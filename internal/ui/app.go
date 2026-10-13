@@ -2803,6 +2803,7 @@ func (a *App) SetAvatarService(s core.AvatarService) {
 		m.SetMiniAvatarFunc(mini)
 	}
 	a.threadPanel.SetAvatarFunc(fn)
+	a.threadsView.SetAvatarFunc(fn)
 	a.activityView.SetAvatarFunc(fn)
 	var pickerFn mentionpicker.AvatarFunc
 	if mini != nil {

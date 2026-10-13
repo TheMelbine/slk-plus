@@ -182,8 +182,19 @@ func TestSearchAndThreadsList(t *testing.T) {
 		t.Errorf("SearchChannel = %#v", res)
 	}
 	list, ok := s.threads.ListFetch(ids.TeamID(teamLumen)).(ui.ThreadsListLoadedMsg)
-	if !ok || !list.SubscriptionsAvailable || len(list.Summaries) != 1 || list.Summaries[0].ChannelID != chDeploys {
-		t.Errorf("ListFetch = %#v", list)
+	if !ok || !list.SubscriptionsAvailable || len(list.Summaries) != 3 {
+		t.Fatalf("ListFetch = %#v", list)
+	}
+	// The user replied in these three threads; only the engineering one
+	// has a reply by someone else past the channel's read cursor, and it
+	// ranks first, then the rest by newest reply.
+	for i, want := range []struct {
+		channel string
+		unread  bool
+	}{{chEngineering, true}, {chDeploys, false}, {chGeneral, false}} {
+		if got := list.Summaries[i]; got.ChannelID != want.channel || got.Unread != want.unread {
+			t.Errorf("Summaries[%d] = %s unread=%v, want %s unread=%v", i, got.ChannelID, got.Unread, want.channel, want.unread)
+		}
 	}
 }
 

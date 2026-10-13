@@ -360,7 +360,13 @@ func TestSelectedCardDimsWhenUnfocused(t *testing.T) {
 	t.Cleanup(func() { styles.Apply("dark", config.Theme{}) })
 
 	m := New(map[string]string{}, "USELF")
-	m.SetSummaries(sampleSummaries())
+	// Read cards only: an unread card's flag is Accent-coloured on purpose,
+	// which this test must not mistake for the border.
+	sums := sampleSummaries()
+	for i := range sums {
+		sums[i].Unread = false
+	}
+	m.SetSummaries(sums)
 
 	// Focused
 	m.SetFocused(true)

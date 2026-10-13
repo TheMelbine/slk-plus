@@ -302,6 +302,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 			mp.HandleAvatarReady(m.UserID)
 		}
 		a.threadPanel.HandleAvatarReady(m.UserID)
+		a.threadsView.HandleAvatarReady(m.UserID)
 		a.activityView.HandleAvatarReady(m.UserID)
 		return nil, true
 

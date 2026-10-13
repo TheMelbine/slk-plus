@@ -585,9 +585,22 @@ func (w *World) threadSummaries(teamID string) []core.ThreadSummary {
 				ChannelID: c.id, ChannelName: c.name, ChannelType: c.typ,
 				ThreadTS: p.TS, ParentUserID: p.UserID, ParentText: p.Text, ParentTS: p.TS,
 				ReplyCount: len(rs), LastReplyTS: last.TS, LastReplyBy: last.UserID,
+				// A reply by someone else past the channel's read cursor is
+				// what the user has not seen yet.
+				Unread: last.UserID != t.selfID && last.TS > c.lastRead,
 			})
 		}
 	}
+	// Unread first, then newest activity, as the cache ranks them.
+	slices.SortStableFunc(out, func(a, b core.ThreadSummary) int {
+		if a.Unread != b.Unread {
+			if a.Unread {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(b.LastReplyTS, a.LastReplyTS)
+	})
 	return out
 }
 

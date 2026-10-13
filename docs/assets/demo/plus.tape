@@ -1,5 +1,5 @@
 # slk-plus: notification levels, stars, followed threads, avatars in the
-# mention picker, the Activity feed. Recorded against the demo workspaces.
+# mention picker, the Activity feed, the Threads view. Recorded against the demo workspaces.
 Output docs/assets/demo/plus.gif
 Source docs/assets/demo/plus-settings.tape
 
@@ -57,3 +57,13 @@ Type@400ms "jjj"
 Sleep 1.5s
 Ctrl+A
 Sleep 1s
+
+# Threads at the top of the sidebar: the same cards as Activity
+Type "h"
+Sleep 300ms
+Type@200ms "gg"
+Sleep 300ms
+Enter
+Sleep 2.5s
+Type@400ms "jj"
+Sleep 1.5s

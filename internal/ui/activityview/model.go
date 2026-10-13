@@ -15,15 +15,13 @@ package activityview
 import (
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
-	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/gammons/slk/internal/core"
+	"github.com/gammons/slk/internal/ui/card"
 	"github.com/gammons/slk/internal/ui/messages"
 	"github.com/gammons/slk/internal/ui/styles"
-	"github.com/muesli/reflow/truncate"
 )
 
 // Each activity row is a two-line card (line 1: author + context + time;
@@ -35,22 +33,12 @@ const (
 	cardStride       = cardContentLines + 1
 )
 
-// Local styles, kept package-private and built from the shared color tokens
-// so theme changes propagate via styles.Apply().
-func mutedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.TextMuted)
-}
-
-func bodyStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.TextPrimary)
-}
-
 // glyphStyle colours the leading type glyph. A read card keeps it muted
 // with the rest of the card; an unread one gets the type's colour, so the
 // column of glyphs shows at a glance what is new and what kind it is.
 func glyphStyle(itemType string, unread bool) lipgloss.Style {
 	if !unread {
-		return mutedStyle()
+		return card.Muted()
 	}
 	c := styles.Primary // mentions and DMs: someone is talking to you
 	switch itemType {
@@ -60,26 +48,6 @@ func glyphStyle(itemType string, unread bool) lipgloss.Style {
 		c = styles.Warning
 	}
 	return lipgloss.NewStyle().Foreground(c).Bold(true)
-}
-
-// thickLeftBorder mirrors the messages/threadsview convention: a 1-column
-// left border using "▌" that marks the selected row.
-var thickLeftBorder = lipgloss.Border{Left: "▌"}
-
-func borderInvisStyle() lipgloss.Style {
-	return styles.InvisibleLeftBorder()
-}
-
-func borderSelectStyle(focused bool) lipgloss.Style {
-	return lipgloss.NewStyle().
-		BorderStyle(thickLeftBorder).BorderLeft(true).
-		BorderForeground(styles.SelectionBorderColor(focused)).
-		BorderBackground(styles.SelectionTintColor(focused)).
-		Background(styles.SelectionTintColor(focused))
-}
-
-func borderFillStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Background(styles.Background)
 }
 
 // Model holds the activity-list state.
@@ -474,7 +442,7 @@ func (m *Model) View(height, width int) string {
 		if m.unreadOnly {
 			msg = "no unread activity"
 		}
-		empty := mutedStyle().Render(msg)
+		empty := card.Muted().Render(msg)
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, empty)
 	}
 
@@ -502,7 +470,7 @@ func (m *Model) View(height, width int) string {
 	}
 	visible := m.renderLines(m.yOffset, end, width)
 	if pad := height - len(visible); pad > 0 {
-		filler := blankLine(width)
+		filler := card.BlankLine(width)
 		out := make([]string, 0, height)
 		out = append(out, visible...)
 		for i := 0; i < pad; i++ {
@@ -560,29 +528,16 @@ func (m *Model) renderLines(start, end, width int) []string {
 			// date, so the feed reads in days without changing the
 			// stride the windowing and click math rely on.
 			if day := messages.DateFromTS(m.items[i+1].FeedTS); day != "" && day != messages.DateFromTS(m.items[i].FeedTS) {
-				out = append(out, dayLine(messages.FormatDateSeparator(day), width))
+				out = append(out, card.DayLine(messages.FormatDateSeparator(day), width))
 				continue
 			}
 			if separator == "" {
-				separator = blankLine(width)
+				separator = card.BlankLine(width)
 			}
 			out = append(out, separator)
 		}
 	}
 	return out
-}
-
-// dayLine returns a muted, centred "── label ──" divider exactly `width`
-// columns wide.
-func dayLine(label string, width int) string {
-	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).
-		Background(styles.Background).Foreground(styles.TextMuted).
-		Render("── " + label + " ──")
-}
-
-// blankLine returns an exactly `width`-column-wide empty line.
-func blankLine(width int) string {
-	return lipgloss.NewStyle().Width(width).Render("")
 }
 
 // renderCard returns the two lines for one activity item:
@@ -631,27 +586,15 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 			avatarUserID = uid
 		}
 	}
-	var avatarCol [cardContentLines]string
-	if m.avatarFn != nil {
-		contentWidth -= avatarColWidth
-		lines := []string{}
-		if avatarUserID != "" {
-			if av := m.avatarFn(avatarUserID); av != "" {
-				lines = strings.Split(av, "\n")
-			}
-		}
-		for i := range avatarCol {
-			if i < len(lines) {
-				avatarCol[i] = lines[i] + " "
-			} else {
-				avatarCol[i] = strings.Repeat(" ", avatarColWidth)
-			}
-		}
+	avatarCol := card.AvatarColumn(m.avatarFn, avatarUserID, cardContentLines)
+	contentWidth -= card.AvatarWidthOf(m.avatarFn)
+	if avatarCol == nil {
+		avatarCol = make([]string, cardContentLines)
 	}
 
-	textStyle, nameStyle, fg := mutedStyle(), mutedStyle(), messages.MutedFgANSI()
+	textStyle, nameStyle, fg := card.Muted(), card.Muted(), messages.MutedFgANSI()
 	if it.IsUnread {
-		textStyle, nameStyle, fg = bodyStyle(), authorStyle(), messages.FgANSI()
+		textStyle, nameStyle, fg = card.Body(), card.Author(), messages.FgANSI()
 	}
 
 	opts := messages.RenderSlackMarkdownOpts{UserNames: m.userNames, ChannelNames: m.channelNames, SelfUserID: m.selfUserID}
@@ -668,17 +611,17 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	}
 	if ctx := m.contextLabel(it); ctx != "" {
 		if author != "" {
-			left += mutedStyle().Render(" · ")
+			left += card.Muted().Render(" · ")
 		}
 		left += ctx
 	}
 	right := ""
-	if rel := formatRelTime(it.FeedTS); rel != "" {
-		right = mutedStyle().Render(rel)
+	if rel := card.RelTime(it.FeedTS); rel != "" {
+		right = card.Muted().Render(rel)
 	}
-	line1 := layoutLine(left, right, contentWidth)
+	line1 := card.LayoutLine(left, right, contentWidth)
 	if !it.IsUnread {
-		line1 = recolorSGR(line1, messages.FgANSI(), messages.MutedFgANSI())
+		line1 = card.RecolorSGR(line1, messages.FgANSI(), messages.MutedFgANSI())
 	}
 
 	// Render the body the way the Threads view and message pane do, then
@@ -696,7 +639,7 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 		// The renderer re-applies the theme text colour after each span
 		// and gives bold/italic an explicit one; a read card wants all of
 		// that plain text muted.
-		preview = recolorSGR(preview, messages.FgANSI(), messages.MutedFgANSI())
+		preview = card.RecolorSGR(preview, messages.FgANSI(), messages.MutedFgANSI())
 	}
 	if selected {
 		// The renderer restores the theme background after each styled
@@ -707,75 +650,13 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	if isDMItem(it.Type) && preview != "" && m.selfUserID != "" && body.UserID == m.selfUserID {
 		// Outside textStyle: its closing reset would drop the body's
 		// text colour.
-		line2 += mutedStyle().Render("You: ")
+		line2 += card.Muted().Render("You: ")
 	}
 	line2 += textStyle.Render(preview)
 
-	line2 = clipToWidth(line2, contentWidth)
-	return m.wrapLine(avatarCol[0]+line1, contentWidth+avatarWidthOf(m.avatarFn), selected, fg),
-		m.wrapLine(avatarCol[1]+line2, contentWidth+avatarWidthOf(m.avatarFn), selected, fg)
-}
-
-// avatarColWidth is the avatar (4 columns) plus a one-column gap.
-const avatarColWidth = 5
-
-func avatarWidthOf(fn messages.AvatarFunc) int {
-	if fn == nil {
-		return 0
-	}
-	return avatarColWidth
-}
-
-// recolorSGR swaps one foreground colour for another in every SGR escape
-// of s, including combined ones like "\x1b[1;38;2;r;g;bm". from and to are
-// full escapes as messages.FgANSI returns them.
-func recolorSGR(s, from, to string) string {
-	fromP, toP := sgrParams(from), sgrParams(to)
-	if len(fromP) == 0 || len(toP) == 0 || from == to {
-		return s
-	}
-	var b strings.Builder
-	for {
-		i := strings.Index(s, "\x1b[")
-		if i < 0 {
-			b.WriteString(s)
-			return b.String()
-		}
-		j := strings.IndexByte(s[i+2:], 'm')
-		if j < 0 {
-			b.WriteString(s)
-			return b.String()
-		}
-		j += i + 2
-		params := strings.Split(s[i+2:j], ";")
-		b.WriteString(s[:i])
-		b.WriteString("\x1b[")
-		b.WriteString(strings.Join(replaceRun(params, fromP, toP), ";"))
-		b.WriteByte('m')
-		s = s[j+1:]
-	}
-}
-
-func sgrParams(esc string) []string {
-	if !strings.HasPrefix(esc, "\x1b[") || !strings.HasSuffix(esc, "m") {
-		return nil
-	}
-	return strings.Split(esc[2:len(esc)-1], ";")
-}
-
-// replaceRun replaces each run of params equal to from with to.
-func replaceRun(params, from, to []string) []string {
-	out := make([]string, 0, len(params))
-	for i := 0; i < len(params); {
-		if i+len(from) <= len(params) && slices.Equal(params[i:i+len(from)], from) {
-			out = append(out, to...)
-			i += len(from)
-			continue
-		}
-		out = append(out, params[i])
-		i++
-	}
-	return out
+	line2 = card.ClipToWidth(line2, contentWidth)
+	return card.WrapLine(avatarCol[0]+line1, contentWidth+card.AvatarWidthOf(m.avatarFn), selected, m.focused, fg),
+		card.WrapLine(avatarCol[1]+line2, contentWidth+card.AvatarWidthOf(m.avatarFn), selected, m.focused, fg)
 }
 
 // contextLabel names the conversation for line 1, muted: "#ch" for a
@@ -794,9 +675,9 @@ func (m *Model) contextLabel(it core.ActivityItem) string {
 	case "dm":
 		return ""
 	case "private", "group_dm":
-		return mutedStyle().Render(messages.ChannelGlyph(chType) + " " + ch)
+		return card.Muted().Render(messages.ChannelGlyph(chType) + " " + ch)
 	default:
-		return mutedStyle().Render("#" + ch)
+		return card.Muted().Render("#" + ch)
 	}
 }
 
@@ -821,52 +702,6 @@ func contextVerb(itemType string) string {
 	default:
 		return ""
 	}
-}
-
-// authorStyle renders the actor name of an unread card in bold so it
-// anchors the card.
-func authorStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.TextPrimary).Bold(true)
-}
-
-// layoutLine places `right` flush against the right edge of a width-column
-// line with `left` on the left, padding between. When there's no room for
-// both, the right meta is dropped and the left is clipped. Widths are
-// measured with lipgloss so ANSI styling doesn't skew the math.
-func layoutLine(left, right string, width int) string {
-	if right == "" {
-		return clipToWidth(left, width)
-	}
-	lw := lipgloss.Width(left)
-	rw := lipgloss.Width(right)
-	if lw+1+rw > width {
-		return clipToWidth(left, width)
-	}
-	return left + strings.Repeat(" ", width-lw-rw) + right
-}
-
-// wrapLine clips a rendered line to contentWidth and applies the selection
-// border + background fill (shared by both card lines so selection spans
-// the whole card).
-func (m *Model) wrapLine(line string, contentWidth int, selected bool, fg string) string {
-	line = clipToWidth(line, contentWidth)
-	// Each styled span ends in a reset that drops the row's background
-	// and text colour; restore both so the row is filled edge to edge and
-	// text after a span keeps the card's colour.
-	bg := messages.BgANSI()
-	if selected {
-		bg = messages.SelectionTintBgANSI(m.focused)
-	}
-	line = messages.ReapplyBgAfterResets(line, bg+fg)
-	borderStyle := borderInvisStyle()
-	fill := borderFillStyle().Width(contentWidth)
-	if selected {
-		borderStyle = borderSelectStyle(m.focused)
-		fill = lipgloss.NewStyle().
-			Background(styles.SelectionTintColor(m.focused)).
-			Width(contentWidth)
-	}
-	return borderStyle.Render(fill.Render(line))
 }
 
 // activityGlyph returns the leading glyph for a row keyed on the item type:
@@ -927,44 +762,4 @@ func (m *Model) resolveUser(uid string) string {
 		return name
 	}
 	return uid
-}
-
-// formatRelTime parses a Slack-style "1700000000.000000" timestamp and
-// returns a coarse "Nm" / "Nh" / "Nd" string. Empty /
-// unparseable inputs return "".
-func formatRelTime(ts string) string {
-	if ts == "" {
-		return ""
-	}
-	secStr := ts
-	if dot := strings.IndexByte(ts, '.'); dot >= 0 {
-		secStr = ts[:dot]
-	}
-	sec, err := strconv.ParseInt(secStr, 10, 64)
-	if err != nil {
-		return ""
-	}
-	d := time.Since(time.Unix(sec, 0))
-	switch {
-	case d < time.Minute:
-		return "now"
-	case d < time.Hour:
-		return strconv.Itoa(int(d/time.Minute)) + "m"
-	case d < 24*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + "h"
-	default:
-		return strconv.Itoa(int(d/(24*time.Hour))) + "d"
-	}
-}
-
-// clipToWidth truncates an already-styled string to at most `width` display
-// columns (trailing ellipsis) without padding short strings.
-func clipToWidth(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if lipgloss.Width(s) <= width {
-		return s
-	}
-	return truncate.StringWithTail(s, uint(width), "…")
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gammons/slk/internal/core"
 	"github.com/gammons/slk/internal/emoji"
+	"github.com/gammons/slk/internal/ui/card"
 	"github.com/gammons/slk/internal/ui/styles"
 )
 
@@ -83,11 +84,11 @@ func TestActivityDetail(t *testing.T) {
 }
 
 func TestFormatRelTime(t *testing.T) {
-	if got := formatRelTime(""); got != "" {
-		t.Errorf("formatRelTime(empty) = %q, want empty", got)
+	if got := card.RelTime(""); got != "" {
+		t.Errorf("card.RelTime(empty) = %q, want empty", got)
 	}
-	if got := formatRelTime("not-a-ts"); got != "" {
-		t.Errorf("formatRelTime(garbage) = %q, want empty", got)
+	if got := card.RelTime("not-a-ts"); got != "" {
+		t.Errorf("card.RelTime(garbage) = %q, want empty", got)
 	}
 }
 
@@ -618,13 +619,6 @@ func TestRenderCard_OnlySelfMentionHighlighted(t *testing.T) {
 	}
 }
 
-func TestFormatRelTime_Short(t *testing.T) {
-	ts := strconv.FormatInt(time.Now().Add(-7*time.Minute).Unix(), 10) + ".0"
-	if got := formatRelTime(ts); got != "7m" {
-		t.Errorf("formatRelTime(7m ago) = %q, want 7m", got)
-	}
-}
-
 // The gap before the first card of an older day is a date divider.
 func TestView_DayDividerBetweenDays(t *testing.T) {
 	now := time.Now()
@@ -697,14 +691,5 @@ func TestRenderCard_ReadCardMutesSpans(t *testing.T) {
 		if got := fgBefore(t, l2, word); got != muted {
 			t.Errorf("%q colour = %s, want muted %s", word, got, muted)
 		}
-	}
-}
-
-func TestRecolorSGR(t *testing.T) {
-	from, to := "\x1b[38;2;1;2;3m", "\x1b[38;2;9;9;9m"
-	in := "\x1b[38;2;1;2;3ma\x1b[1;38;2;1;2;3mb\x1b[38;2;4;5;6mc\x1b[m"
-	want := "\x1b[38;2;9;9;9ma\x1b[1;38;2;9;9;9mb\x1b[38;2;4;5;6mc\x1b[m"
-	if got := recolorSGR(in, from, to); got != want {
-		t.Errorf("recolorSGR = %q, want %q", got, want)
 	}
 }

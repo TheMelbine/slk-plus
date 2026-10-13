@@ -136,6 +136,7 @@ scrollbars, date formatting, case folding, or ID formatting: it already exists.
 | Text selection ranges and anchors | `ui/selection` (`Range`, `Anchor`, `LessOrEqual`) |
 | Theme colors and styles | `ui/styles` (`Username`, `SelectionStyle`, `SearchHighlightStyle`, `MentionBadgeStyle`, `UserColor`) |
 | Left-border column of an unselected row (aligns with the selection bar) | `styles.InvisibleLeftBorder()` |
+| Fixed-height list cards (Activity, Threads): selection border and fill, avatar column, right-aligned meta, date divider, short relative time, muting a rendered span | `ui/card` (`WrapLine`, `AvatarColumn`, `LayoutLine`, `DayLine`, `RelTime`, `RecolorSGR`) |
 | Window tree geometry | `ui/wintree` |
 | Modal geometry / row hit-testing | `boxedOverlay`, `clickableOverlay` (list rows), `pointClickable` (a single glyph, e.g. the profile dialog's 📋) in `internal/ui/reducer_modal_click.go` |
 | Channel/DM destination picker for forwarding | `channelfinder.Model.OpenForForwarding()` (joined conversations only); `Open()` restores the normal switcher |
