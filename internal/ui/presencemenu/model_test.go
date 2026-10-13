@@ -89,3 +89,19 @@ func TestModel_EscapeCloses(t *testing.T) {
 		t.Error("expected closed after esc")
 	}
 }
+
+// Cyrillic typed into the menu reaches the query, and backspace removes
+// the whole character rather than half of its UTF-8 bytes.
+func TestModel_CyrillicQuery(t *testing.T) {
+	m := New()
+	m.OpenWith("Workspace", "active", false, time.Time{})
+	m.HandleKey("ж")
+	m.HandleKey("ы")
+	if m.query != "жы" {
+		t.Fatalf("query = %q, want жы", m.query)
+	}
+	m.HandleKey("backspace")
+	if m.query != "ж" {
+		t.Fatalf("backspace left %q, want ж", m.query)
+	}
+}

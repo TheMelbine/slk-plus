@@ -125,10 +125,12 @@ func physicalKey(msg tea.KeyMsg, printable, nonLatin bool) tea.KeyMsg {
 
 // textEntryMode reports whether printable keys in mode are text the
 // user is typing (compose, prompts, type-to-filter pickers) rather than
-// commands. physicalKey leaves printable keys alone in these modes.
+// commands. physicalKey leaves printable keys alone in these modes. The
+// marks overlay takes only mark letters and ' (no text input), so it
+// maps keys like normal mode.
 func textEntryMode(m Mode) bool {
 	switch m {
-	case ModeNormal, ModeConfirm, ModeReactionsView, ModeLinkPicker, ModeUserProfile:
+	case ModeNormal, ModeConfirm, ModeReactionsView, ModeLinkPicker, ModeUserProfile, ModeMarks:
 		return false
 	}
 	return true

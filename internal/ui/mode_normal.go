@@ -10,11 +10,16 @@
 //     (page), G (bottom), Tab/h/l (focus next/prev), Ctrl-h/l
 //     (nav back/forward through visited channels; Ctrl-k is an
 //     alias for forward)
-//   - layout toggles: s (sidebar), t (thread)
+//   - layout toggles: Ctrl-B (sidebar), Ctrl-] (thread)
+//   - theme cycle: Alt-Y / Alt-Shift-Y apply the next / previous
+//     theme, wrapping around (saved per workspace, like Ctrl-Y)
 //   - message ops: y (copy message), Y/C (copy permalink), E (edit), D (delete),
-//     U (mark unread), O/v (open image preview)
+//     U (mark unread), M (set mark), ' (jump to mark), O/v (open image
+//     preview)
+//   - channel/thread ops: s (star), m (cycle notification level),
+//     f (follow thread)
 //   - reaction nav sub-state: r enters; arrows + Enter select
-//     (delegated to handleReactionNav / handleThreadReactionNav)
+//     (delegated to handleReactionNav, for either content pane)
 //   - window commands: Ctrl-W prefix arms a pending sub-state; the
 //     next key is a window chord (s/v split, h/j/k/l focus, w cycle,
 //     q/c close, o only — delegated to handleWindowChord)
@@ -60,12 +65,30 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Reaction-nav sub-state (intercept before normal keys).
-	if a.focusedPanel == PanelMessages && a.messagepane.ReactionNavActive() {
-		return a.handleReactionNav(msg)
+	// M pending sub-state: the next key names the mark to set
+	// (intercepted FIRST, like ctrl+w above).
+	if a.pendingMark {
+		a.pendingMark = false
+		a.statusbar.SetHelpHint(a.defaultHelpHint())
+		return a.handleMarkChord(msg)
 	}
-	if a.focusedPanel == PanelThread && a.threadPanel.ReactionNavActive() {
-		return a.handleThreadReactionNav(msg)
+
+	// ' pending sub-state: the next key names the mark to jump to.
+	if a.pendingJumpMark {
+		a.pendingJumpMark = false
+		a.statusbar.SetHelpHint(a.defaultHelpHint())
+		return a.handleJumpChord(msg)
+	}
+
+	// Reaction-nav sub-state (intercept before normal keys).
+	if p, channelID, ok := a.focusedContentPane(); ok && p.ReactionNavActive() {
+		return a.handleReactionNav(p, channelID, msg)
+	}
+
+	if a.isMessageOpKey(msg) {
+		if cmd, blocked := a.ephemeralSelectionGuard(); blocked {
+			return cmd
+		}
 	}
 
 	switch {
@@ -260,6 +283,10 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		a.themeSwitcher.OpenWithScope(themeswitcher.ScopeGlobal, "Default theme for new workspaces")
 		a.SetMode(ModeThemeSwitcher)
 		return nil
+	case key.Matches(msg, a.keys.ThemeNext):
+		return a.cycleTheme(1)
+	case key.Matches(msg, a.keys.ThemePrev):
+		return a.cycleTheme(-1)
 
 	case key.Matches(msg, a.keys.PresenceMenu):
 		header := a.workspaceNameForActive()
@@ -275,17 +302,13 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		return func() tea.Msg { return EnterNewMessageMsg{} }
 
 	case key.Matches(msg, a.keys.Reaction):
-		if a.focusedPanel == PanelMessages {
-			return a.openPickerFromMessage()
-		} else if a.focusedPanel == PanelThread {
-			return a.openPickerFromThread()
+		if p, channelID, ok := a.focusedContentPane(); ok {
+			return a.openReactionPicker(p, channelID)
 		}
 
 	case key.Matches(msg, a.keys.ReactionNav):
-		if a.focusedPanel == PanelMessages {
-			a.messagepane.EnterReactionNav()
-		} else if a.focusedPanel == PanelThread {
-			a.threadPanel.EnterReactionNav()
+		if p, _, ok := a.focusedContentPane(); ok {
+			p.EnterReactionNav()
 		}
 
 	case key.Matches(msg, a.keys.ListReactions):
@@ -296,6 +319,9 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 
 	case key.Matches(msg, a.keys.SaveThread):
 		return a.saveThreadToFile()
+
+	case key.Matches(msg, a.keys.RespondButtons):
+		return a.respondToSelected()
 
 	case key.Matches(msg, a.keys.CopyMessage):
 		return a.copyMessageOfSelected()
@@ -324,6 +350,16 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, a.keys.DownloadFile):
 		return a.downloadFilesOfSelected()
 
+	case a.view == ViewActivity && a.focusedPanel == PanelMessages && key.Matches(msg, a.keys.MarkUnread):
+		// In the Activity view U toggles the selected item's read
+		// state. The channel pane is hidden behind the view, so the
+		// arm below would mark a message nobody can see.
+		it, ok := a.activityView.SelectedItem()
+		if !ok {
+			return nil
+		}
+		return a.setActivityItemRead(it, it.IsUnread)
+
 	case key.Matches(msg, a.keys.MarkUnread):
 		return a.markUnreadOfSelected()
 
@@ -335,6 +371,24 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 
 	case key.Matches(msg, a.keys.NotifyLevel):
 		return a.cycleNotifyLevelOfSelected()
+
+	case key.Matches(msg, a.keys.MarkSet):
+		a.pendingMark = true
+		a.statusbar.SetHelpHint("M…")
+		return nil
+
+	case key.Matches(msg, a.keys.JumpMark):
+		// With the jump overlay enabled (the default), ' opens the
+		// marks list; a letter then jumps immediately from there, so
+		// 'a behaves exactly as it does with the overlay suppressed.
+		if a.showJumpOverlay {
+			cmd := a.openMarksOverlay()
+			a.SetMode(ModeMarks)
+			return cmd
+		}
+		a.pendingJumpMark = true
+		a.statusbar.SetHelpHint("'…")
+		return nil
 
 	case key.Matches(msg, a.keys.NextUnread):
 		return a.jumpToUnread(1)
@@ -361,16 +415,12 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		keyStr := msg.String()
 		if len(keyStr) == 1 && keyStr[0] >= '1' && keyStr[0] <= '9' {
 			if a.compose.Uploading() || a.threadCompose.Uploading() {
-				return a.uploadToastCmd("Upload in progress", 2*time.Second)
+				return toastWithClear(a, "Upload in progress", 2*time.Second)
 			}
 			idx := int(keyStr[0] - '1') // 0-indexed
 			if idx < len(a.workspaceItems) && a.workspaceSvc != nil {
 				if a.workspaceItems[idx].ID != a.workspaceRail.SelectedID() {
-					switcher := a.workspaceSvc
-					teamID := a.workspaceItems[idx].ID
-					return func() tea.Msg {
-						return switcher.Switch(teamID)
-					}
+					return a.switchWorkspace(a.workspaceItems[idx].ID)
 				}
 			}
 		}

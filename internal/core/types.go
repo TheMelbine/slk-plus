@@ -39,8 +39,9 @@ type MessageItem struct {
 	Attachments []Attachment
 	IsEdited    bool
 	// Subtype mirrors Slack's `subtype` field on a message event.
-	// Currently we only act on "thread_broadcast" (a thread reply that
-	// was also sent to the channel) so we can render a label above it.
+	// We act on "thread_broadcast" (a thread reply that was also sent to
+	// the channel), to render a label above it, and on "me_message" (a
+	// /me line), to render its body in italics.
 	Subtype string
 
 	// Blocks holds parsed Slack Block Kit blocks. Rendered between
@@ -51,6 +52,15 @@ type MessageItem struct {
 	// `attachments` field (color stripe + title + fields style bot
 	// cards). Rendered after Blocks.
 	LegacyAttachments []blocks.LegacyAttachment
+
+	// Ephemeral is set for a message only the current user can see
+	// (Slack's is_ephemeral). It is never cached and never a
+	// read-marking target; Slack does not return it from history.
+	Ephemeral bool
+
+	// BotID is the Slack bot_id of the app that posted the message. Set for
+	// ephemerals; sent as service_id when one of their buttons is pressed.
+	BotID string
 }
 
 // Attachment represents a file or image attached to a message.
@@ -199,6 +209,7 @@ type ActivityItem struct {
 	ThreadTS  string // set for thread_v2 (== thread root)
 	AuthorID  string // message author (mentions); "" when unknown
 	Reaction  string // emoji short name, for message_reaction only
+	Subtype   string // saved_reminder's item_type ("reminder"); "" for other types
 }
 
 // ActivityMessage is a hydrated message body for one activity ref
@@ -238,6 +249,15 @@ type RateLimitedError struct {
 func (e *RateLimitedError) Error() string {
 	return fmt.Sprintf("rate limited, retry after %s", e.RetryAfter)
 }
+
+// CommandError is how adapters report Slack refusing a slash command
+// (chat.command's {"ok":false,"error":Code}), so the UI never parses
+// Slack error strings. Code is Slack's, e.g. "unknown_command".
+type CommandError struct {
+	Code string
+}
+
+func (e *CommandError) Error() string { return e.Code }
 
 // Theme holds the user's color overrides from config.
 type Theme struct {

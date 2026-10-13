@@ -54,14 +54,20 @@ func frecentEmoji(limit int) []core.EmojiEntry {
 func (d *Demo) services() services {
 	w, dir := d.world, d.director
 	return services{
-		activity: core.NewActivityService(
-			func(teamID ids.TeamID, _ int, unreadOnly bool) core.Msg {
+		activity: core.NewActivityService(core.ActivityServiceFuncs{
+			Fetch: func(teamID ids.TeamID, _ int, unreadOnly bool) core.Msg {
 				return ui.ActivityListLoadedMsg{TeamID: string(teamID), Items: w.activity(string(teamID), unreadOnly)}
 			},
-			func(teamID ids.TeamID, _ map[string][]string) core.Msg {
+			Hydrate: func(teamID ids.TeamID, _ map[string][]string) core.Msg {
 				return ui.ActivityBodiesLoadedMsg{TeamID: string(teamID), Bodies: w.activityBodies(w.activity(string(teamID), false))}
 			},
-		),
+			// U and Enter on a reminder flip the card optimistically; the
+			// confirmation clears the in-flight flag so later presses send
+			// again. The demo keeps no server-side read state.
+			SetRead: func(teamID ids.TeamID, item core.ActivityItem, read bool) core.Msg {
+				return ui.ActivityReadSetMsg{TeamID: string(teamID), Key: item.Key, Read: read}
+			},
+		}),
 		channels: core.NewChannelService(core.ChannelServiceFuncs{
 			Fetch: func(channelID ids.ChannelID, _ string) core.Msg {
 				ch := string(channelID)

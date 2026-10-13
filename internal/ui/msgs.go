@@ -21,7 +21,6 @@ import (
 
 	"github.com/gammons/slk/internal/core"
 	emojiutil "github.com/gammons/slk/internal/emoji"
-	"github.com/gammons/slk/internal/ui/commandpicker"
 	"github.com/gammons/slk/internal/ui/messages"
 	"github.com/gammons/slk/internal/ui/peerstatus"
 	"github.com/gammons/slk/internal/ui/searchresults"
@@ -40,7 +39,7 @@ type EmojiImageReadyMsg = emojiutil.EmojiImageReadyMsg
 // surface. All EmojiImageReadyMsg arrivals during the debounce window
 // collapse to this one invalidation — without coalescing a busy channel
 // with N cold-cache emoji would produce N full rebuilds (a few hundred
-// renderMessagePlain calls each) on the UI thread in rapid succession,
+// RenderMessage calls each) on the UI thread in rapid succession,
 // presenting as a multi-second freeze.
 //
 // Lowercase (unexported) because no other package dispatches this — it
@@ -65,6 +64,12 @@ type (
 		// is unaffected — going back to a channel still updates its
 		// last-visited timestamp.
 		FromHistory bool
+		// TeamID, when set, is the workspace the selection was made
+		// in. applyLocation sets it because its command is queued: a
+		// workspace switch reduced first would otherwise apply one
+		// workspace's channel in another. Empty means "the active
+		// workspace", which is what every other sender means.
+		TeamID string
 	}
 	MessagesLoadedMsg struct {
 		ChannelID  string
@@ -139,6 +144,12 @@ type (
 	ThreadRepliesLoadedMsg struct {
 		ThreadTS string
 		Replies  []messages.MessageItem
+		// FromCache marks the instant render from SQLite that precedes
+		// the network fetch. It only renders: the cache can lag Slack
+		// (or hold rows Slack dropped), so marking the thread read from
+		// it raced the fetched result's mark with a stale cursor. The
+		// zero value is the fetched result, which alone marks.
+		FromCache bool
 	}
 	SendThreadReplyMsg struct {
 		ChannelID string
@@ -211,12 +222,13 @@ type (
 		Items  []core.ActivityItem
 	}
 	// ActivitySelectedMsg is dispatched when the user presses Enter on
-	// an Activity row. The App opens the underlying thread (ThreadTS
-	// set) or channel message (jumps to TS) reusing existing helpers.
+	// (or clicks) an Activity row. The App opens the underlying thread
+	// (ThreadTS set) or channel message (jumps to TS); an item with no
+	// channel has nothing to open and is acknowledged instead. Ignored
+	// if TeamID is not the active team.
 	ActivitySelectedMsg struct {
-		ChannelID string
-		TS        string
-		ThreadTS  string
+		TeamID string
+		Item   core.ActivityItem
 	}
 	// ActivityBodiesLoadedMsg carries hydrated message bodies for the
 	// refs in a freshly loaded Activity page (fetched via messages.list
@@ -232,7 +244,17 @@ type (
 	// the filtering). Dispatched by the unread-toggle key while the
 	// Activity view is focused.
 	ActivityToggleUnreadMsg struct{}
-	ConnectionStateMsg      struct {
+	// ActivityReadSetMsg reports the result of asking Slack to mark one
+	// Activity item read (Read=true) or unread. The App changed the
+	// item before asking; a non-nil Err makes it undo that change.
+	// Ignored if TeamID is not the active team.
+	ActivityReadSetMsg struct {
+		TeamID string
+		Key    string
+		Read   bool
+		Err    error
+	}
+	ConnectionStateMsg struct {
 		State int // 0=connecting, 1=connected, 2=disconnected
 	}
 	ReactionAddedMsg struct {
@@ -312,8 +334,8 @@ type (
 		UserStatuses map[string]peerstatus.Status
 		// ExternalUsers maps userID -> true for users this workspace
 		// considers Slack Connect / shared-channel guests. Hydrated from
-		// cache.User.IsExternal so the mention picker can flag externals
-		// at workspace-switch time, before any new userResolver lookups
+		// the target workspace's cache projection (DB.ExternalUsers), not
+		// another workspace's stored flag, before new userResolver lookups
 		// fire. Order matters: the App handler applies this BEFORE
 		// SetUserNames so the picker rebuild sees the external flags.
 		ExternalUsers map[string]bool
@@ -391,8 +413,8 @@ type (
 		UserStatuses map[string]peerstatus.Status
 		// ExternalUsers maps userID -> true for users this workspace
 		// considers Slack Connect / shared-channel guests. Hydrated from
-		// cache.User.IsExternal so the mention picker can flag externals
-		// on startup, before any new userResolver lookups fire. Order
+		// the target workspace's cache projection (DB.ExternalUsers) so the
+		// picker flags externals on startup before new lookups fire. Order
 		// matters: the App handler applies this BEFORE SetUserNames so
 		// the picker rebuild sees the external flags.
 		ExternalUsers map[string]bool
@@ -461,6 +483,15 @@ type (
 		ChannelID   string
 		UserID      string
 		WorkspaceID string
+	}
+	// BotStatusMsg is an app's "working" indicator on a thread (Slack's
+	// ai_assistant_status). An empty Status clears it.
+	BotStatusMsg struct {
+		WorkspaceID string
+		ChannelID   string
+		ThreadTS    string
+		BotUserID   string
+		Status      string
 	}
 	TypingExpiredMsg  struct{}
 	PresenceChangeMsg struct {
@@ -733,37 +764,6 @@ type ChannelJoinFailedMsg struct {
 	ID   string
 	Name string
 	Err  error
-}
-
-// SlashCommandsMsg delivers a workspace's slash commands for the "/"
-// picker. cmd/slk sends it once the workspace connects.
-type SlashCommandsMsg struct {
-	TeamID   string
-	Commands []commandpicker.Command
-}
-
-// RunSlashCommandMsg asks the App to run a slash command typed in a
-// composer.
-type RunSlashCommandMsg struct {
-	ChannelID string
-	ThreadTS  string
-	Command   string
-	Text      string
-}
-
-// SlashCommandRanMsg carries the result of ChannelService.RunCommand.
-// Success needs no feedback: the command answers with a message.
-type SlashCommandRanMsg struct {
-	Command string
-	Err     error
-}
-
-// EphemeralMessageMsg delivers a message only the user sees, such as a
-// slash command's response. It is shown in the channel or open thread
-// but never cached and never affects read state.
-type EphemeralMessageMsg struct {
-	ChannelID string
-	Message   messages.MessageItem
 }
 
 // ToggleChannelStarMsg requests the App to star or unstar ChannelID.

@@ -28,7 +28,7 @@
 //	messages.AvatarReadyMsg   - lazy avatar fetch landed:
 //	                            invalidate both pane caches.
 //
-//	statusbar.CopiedMsg               - "N chars copied"
+//	statusbar.CopiedMsg               - "Copied N chars"
 //	statusbar.CopiedClearMsg          - 2/3s expiry tick
 //	statusbar.PermalinkCopiedMsg      - "Copied permalink"
 //	statusbar.PermalinkCopyFailedMsg  - "Failed to copy link"
@@ -45,8 +45,11 @@
 // shape. Grouping them here keeps the residual Update switch
 // near-empty.
 //
-// Two small helpers (toastCmd, fixedToastCmd) collapse the
-// repetitive `cmds = append(cmds, tea.Tick(Ns, ... CopiedClearMsg))`
+// Every toast goes through one of two helpers (the toast rule in
+// AGENTS.md): toastWithClear shows a toast and schedules its clear
+// (copiedClearAfter), and toastUntilReplaced shows one that a later
+// toast replaces on purpose (upload progress). toastWithClear also
+// collapses the `cmds = append(cmds, tea.Tick(Ns, ... CopiedClearMsg))`
 // idiom that recurred ~11 times in the original switch.
 package ui
 
@@ -66,12 +69,13 @@ import (
 )
 
 // copiedClearAfter schedules a CopiedClearMsg `d` from now for the
-// toast currently shown. The status bar's CopiedClearMsg handler clears
-// the toast slot unless a newer toast has replaced it since.
+// toast now in the status bar, so call it right after setting that
+// toast. The CopiedClearMsg handler clears the slot only if no other
+// toast replaced this one in the meantime (statusbar ToastSeq).
 func copiedClearAfter(a *App, d time.Duration) tea.Cmd {
-	gen := a.statusbar.ToastGen()
+	seq := a.statusbar.ToastSeq()
 	return tea.Tick(d, func(time.Time) tea.Msg {
-		return statusbar.CopiedClearMsg{Gen: gen}
+		return statusbar.CopiedClearMsg{Seq: seq}
 	})
 }
 
@@ -86,11 +90,19 @@ func copiedClearAfter(a *App, d time.Duration) tea.Cmd {
 const emojiInvalidateDebounce = 100 * time.Millisecond
 
 // toastWithClear pushes text into the status bar's toast slot and
-// schedules the clear after `d`. Used by the fixed-text and
-// formatted-reason toasts below.
+// schedules the clear after `d`. It is the path for every toast that
+// expires: it sets the toast on the Update goroutine, never inside a
+// tea.Cmd, and ties the clear to that toast.
 func toastWithClear(a *App, text string, d time.Duration) tea.Cmd {
 	a.statusbar.SetToast(text)
 	return copiedClearAfter(a, d)
+}
+
+// toastUntilReplaced shows a toast with no expiry of its own, for a
+// toast that a later one replaces on purpose, as an upload's result
+// replaces its progress. Every other toast goes through toastWithClear.
+func toastUntilReplaced(a *App, text string) {
+	a.statusbar.SetToast(text)
 }
 
 var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
@@ -99,11 +111,17 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		return reducePaste(a, m), true
 
 	case statusbar.CopiedMsg:
-		a.statusbar.ShowCopied(m.N)
-		return copiedClearAfter(a, 2*time.Second), true
+		// No toast means no clear: a clear scheduled now would belong
+		// to the toast on screen, such as an upload's progress.
+		if m.N <= 0 {
+			return nil, true
+		}
+		return toastWithClear(a, fmt.Sprintf("Copied %d chars", m.N), 2*time.Second), true
 
 	case statusbar.CopiedClearMsg:
-		a.statusbar.ClearToast(m.Gen)
+		if m.Seq == a.statusbar.ToastSeq() {
+			a.statusbar.ClearCopied()
+		}
 		return nil, true
 
 	case statusbar.PermalinkCopiedMsg:
@@ -176,7 +194,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		return toastWithClear(a, m.Text, 3*time.Second), true
 
 	case UploadProgressMsg:
-		a.statusbar.SetToast(fmt.Sprintf("Uploading %d/%d…", m.Done, m.Total))
+		toastUntilReplaced(a, fmt.Sprintf("Uploading %d/%d…", m.Done, m.Total))
 		return nil, true
 
 	case EditorFinishedMsg:
@@ -204,7 +222,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 			if a.threadCloseAfterUpload {
 				a.CloseThread()
 			}
-			return a.uploadToastCmd(
+			return toastWithClear(a,
 				"Upload failed: "+truncateReason(m.Err.Error(), 40),
 				3*time.Second,
 			), true
@@ -221,7 +239,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		if a.threadCloseAfterUpload {
 			a.CloseThread()
 		}
-		return a.uploadToastCmd("Sent", 2*time.Second), true
+		return toastWithClear(a, "Sent", 2*time.Second), true
 
 	case ConnectionStateMsg:
 		a.statusbar.SetConnectionState(statusbar.ConnectionState(m.State))
@@ -243,7 +261,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		}
 		// Thread panel: v1 uses coarse cache invalidation. If any
 		// reply in the open thread has a matching TS, blow the
-		// thread cache so renderThreadMessage runs again with the
+		// thread cache so the reply renderer runs again with the
 		// now-cached image bytes. HasReply guards against churning
 		// the thread cache on every messages-pane image arrival.
 		if a.threadPanel.HasReply(m.TS) {
@@ -351,7 +369,7 @@ func reducePaste(a *App, m tea.PasteMsg) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
 		// Same in-flight draft invariant as handleInsertMode: a paste
 		// must not alter the uploading composer's caption/attachments.
-		return a.uploadToastCmd("Upload in progress", 2*time.Second)
+		return toastWithClear(a, "Upload in progress", 2*time.Second)
 	}
 	if a.clipboardAvailable {
 		target := &a.compose

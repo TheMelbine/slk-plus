@@ -10,9 +10,10 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	bubblesansi "github.com/gammons/slk/internal/bubbles/ansi"
+	"github.com/gammons/slk/internal/bubbles/entrylist"
 	emojiutil "github.com/gammons/slk/internal/emoji"
 	"github.com/gammons/slk/internal/ui/styles"
-	"github.com/rivo/uniseg"
 )
 
 var (
@@ -47,12 +48,14 @@ var (
 	// raw <#CID> token.
 	channelMentionRe = regexp.MustCompile(`<#([A-Z0-9]+)(?:\|([^>]+))?>`)
 
-	// Slack date tokens: <!date^TIMESTAMP^FORMAT|FALLBACK> (an optional
-	// ^LINK segment may precede the |). Common in bot/unfurl content
-	// (Linear, Jira, GitHub). We render the precomputed FALLBACK text
-	// (already localized by Slack) rather than re-deriving the date from
-	// the format string. Group 1 is the fallback.
-	dateTokenRe = regexp.MustCompile(`<!date\^[^|>]*\|([^>]*)>`)
+	// Slack date tokens: <!date^TIMESTAMP^FORMAT|FALLBACK> (Slack's
+	// canonical wire form is |FALLBACK|LINK; some senders use a
+	// caret-form ^LINK instead). Common in bot/unfurl content
+	// (Linear, Jira, GitHub, calendar apps). Group 1 is the body
+	// between <!date^ and >; renderDateToken expands the FORMAT
+	// string in the local timezone, falling back to FALLBACK on
+	// malformed input.
+	dateTokenRe = regexp.MustCompile(`<!date\^([^>]*)>`)
 
 	// Slack escapes &, <, > in user-typed text per
 	// https://api.slack.com/reference/surfaces/formatting#escaping.
@@ -261,24 +264,12 @@ func wrapLine(buf *strings.Builder, line string, limit int) {
 	}
 }
 
-// ReapplyBgAfterResets is exported for use by other UI packages (e.g. sidebar).
-// Handles both \x1b[m and \x1b[0m reset forms.
-//
-// The `style` argument is one or more ANSI escape sequences (commonly a bg
-// color, or a bg+fg pair) that will be re-emitted after every reset so that
-// inline styled spans don't leak the terminal's defaults through. Callers
-// that only need to restore the background can pass just BgANSI(); callers
-// that also need to restore the foreground (so plain text following a styled
-// span — e.g. the body after a <@user> mention — keeps the theme text color)
-// should pass BgANSI()+FgANSI().
+// ReapplyBgAfterResets re-emits style after every SGR reset in text. It
+// delegates to bubblesansi.ReapplyAfterResets, which holds the one
+// implementation and documents the style argument; new code, and anything
+// under internal/bubbles, should call that directly.
 func ReapplyBgAfterResets(text string, style string) string {
-	if style == "" {
-		return text
-	}
-	// lipgloss v2 emits the short form, but image renderers and other
-	// ANSI producers may emit the explicit zero form.
-	text = strings.ReplaceAll(text, "\x1b[0m", "\x1b[0m"+style)
-	return strings.ReplaceAll(text, "\x1b[m", "\x1b[m"+style)
+	return bubblesansi.ReapplyAfterResets(text, style)
 }
 
 var (
@@ -826,11 +817,10 @@ func renderInlineFormattingWith(text string, opts RenderSlackMarkdownOpts) strin
 
 	text = restoreLinks(text)
 
-	// Date tokens: <!date^TS^FORMAT|FALLBACK> -> FALLBACK. Done before
-	// channel/user mentions; the token never contains <#/<@ forms.
-	text = dateTokenRe.ReplaceAllStringFunc(text, func(match string) string {
-		return dateTokenRe.FindStringSubmatch(match)[1]
-	})
+	// Date tokens: <!date^TS^FORMAT|FALLBACK> -> local-formatted date.
+	// Done before channel/user mentions; the token never contains
+	// <#/<@ forms.
+	text = dateTokenRe.ReplaceAllStringFunc(text, renderDateToken)
 
 	// Usergroup mentions: <!subteam^SID|@label> -> @label, or bare
 	// <!subteam^SID> -> @handle via the workspace-scoped usergroup map
@@ -1158,134 +1148,26 @@ func isItalicWordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-// plainLine pairs an ANSI-stripped line with a column→byte index. Bytes
-// has length `displayWidth + 1`; for each visible column c in
-// [0, displayWidth), Bytes[c] is the byte offset in Text where the
-// grapheme cluster occupying column c starts. Bytes[displayWidth] is
-// always len(Text) — a sentinel for clean slicing.
-//
-// Slicing columns [from, to) is `Text[Bytes[from]:Bytes[to]]`. This
-// preserves multi-rune clusters (ZWJ sequences, skin-tone modifiers,
-// variation selectors) intact so clipboard text reads as written.
-//
-// Wide clusters (W>1) span multiple columns whose Bytes entries point
-// at the SAME starting byte offset. Slicing into the middle of a wide
-// cluster simply slices to the end of the cluster's columns; the
-// resulting bytes never split a cluster.
-//
-// Zero-width clusters (combining marks, ZWJ joiners as standalone
-// clusters) are appended to Text but do not consume a column. Their
-// bytes attach to whatever column comes next (or to the column before
-// when they trail a base cluster, since the next Bytes[] entry already
-// points past them).
-type plainLine struct {
-	Text  string
-	Bytes []int
-}
+// plainLine is the ANSI-stripped, column-aligned mirror of one rendered
+// row. It lives in internal/bubbles/entrylist since Phase 3; these names
+// remain for the messages package's existing callers.
+type plainLine = entrylist.PlainLine
 
-// plainLines returns column-aligned plain mirrors of each line in s.
-// See `plainLine` for the shape and slicing contract.
-//
-// Width measurement uses uniseg.Graphemes.Width() — the same model
-// (wcwidth-style cell counting) that drives the rest of the messages
-// pipeline. Custom emoji whose actual terminal width disagrees with
-// uniseg's reported width may be off by one column; that's acceptable
-// for selection: the worst case is a one-cell drift between the
-// visible highlight and the underlying text, never a crash.
-func plainLines(s string) []plainLine {
-	stripped := ansi.Strip(s)
-	rawLines := strings.Split(stripped, "\n")
-	out := make([]plainLine, len(rawLines))
-	for i, line := range rawLines {
-		out[i] = buildPlainLine(line)
-	}
-	return out
-}
+func plainLines(s string) []plainLine               { return entrylist.PlainLines(s) }
+func displayWidthOfPlain(p plainLine) int           { return entrylist.DisplayWidth(p) }
+func sliceColumns(p plainLine, from, to int) string { return entrylist.SliceColumns(p, from, to) }
 
-// buildPlainLine walks the grapheme clusters of `line` and constructs
-// the (Text, Bytes) pair. Text is line itself (already ANSI-stripped);
-// we only need to compute the column→byte map.
-func buildPlainLine(line string) plainLine {
-	if line == "" {
-		return plainLine{Text: "", Bytes: []int{0}}
-	}
-	// Use the grapheme-only iterator (FirstGraphemeClusterInString)
-	// instead of uniseg.NewGraphemes/.Next(): the latter runs uniseg's
-	// full StepString state machine, which also computes word/sentence/
-	// line-break boundaries we never use. That sentence-break work was
-	// ~67% of a full buildCache (the ~500ms thread-open / channel-switch
-	// rebuild). The grapheme cluster boundaries and widths produced are
-	// identical (verified by TestBuildPlainLine_MatchesUnisegGraphemes).
-	bytesMap := make([]int, 0, len(line))
-	byteOffset := 0
-	state := -1
-	rest := line
-	for len(rest) > 0 {
-		var cluster string
-		var w int
-		cluster, rest, w, state = uniseg.FirstGraphemeClusterInString(rest, state)
-		if w <= 0 {
-			// Zero-width cluster: bytes go into Text but no column is
-			// produced. The byte offset advances; the next W>0 cluster
-			// will record its starting byte at the post-advanced offset
-			// (so leading combining marks attach to the next column,
-			// and trailing combining marks attach to the previous one
-			// because the next Bytes[] entry already points past them).
-			byteOffset += len(cluster)
-			continue
-		}
-		// Wide cluster spans w columns, all pointing at the same byte
-		// offset (the start of this cluster).
-		for k := 0; k < w; k++ {
-			bytesMap = append(bytesMap, byteOffset)
-		}
-		byteOffset += len(cluster)
-	}
-	// Final sentinel: byte offset just past everything in `line`.
-	bytesMap = append(bytesMap, len(line))
-	return plainLine{Text: line, Bytes: bytesMap}
-}
-
-// displayWidthOfPlain returns the display column count of a plainLine.
-func displayWidthOfPlain(p plainLine) int {
-	if len(p.Bytes) == 0 {
-		return 0
-	}
-	return len(p.Bytes) - 1
-}
-
-// sliceColumns returns the substring covering display columns [from, to)
-// of a plainLine. Out-of-range arguments are clamped. Slicing into the
-// middle of a wide cluster includes the entire cluster (because the
-// columns share a byte offset); this is by design — clipboard text
-// reads as written.
-func sliceColumns(p plainLine, from, to int) string {
-	width := displayWidthOfPlain(p)
-	if from < 0 {
-		from = 0
-	}
-	if to > width {
-		to = width
-	}
-	if from >= to {
-		return ""
-	}
-	return p.Text[p.Bytes[from]:p.Bytes[to]]
-}
-
-// PlainLine is the exported alias of plainLine for sibling UI packages
-// (e.g. thread) that maintain their own render caches and need to do
-// the same column→byte plain-text mirror lookups for selection.
-type PlainLine = plainLine
+// PlainLine is the exported alias for sibling UI packages (thread).
+type PlainLine = entrylist.PlainLine
 
 // PlainLines is the exported form of plainLines.
-func PlainLines(s string) []PlainLine { return plainLines(s) }
+func PlainLines(s string) []PlainLine { return entrylist.PlainLines(s) }
 
 // DisplayWidthOfPlain is the exported form of displayWidthOfPlain.
-func DisplayWidthOfPlain(p PlainLine) int { return displayWidthOfPlain(p) }
+func DisplayWidthOfPlain(p PlainLine) int { return entrylist.DisplayWidth(p) }
 
 // SliceColumns is the exported form of sliceColumns.
-func SliceColumns(p PlainLine, from, to int) string { return sliceColumns(p, from, to) }
+func SliceColumns(p PlainLine, from, to int) string { return entrylist.SliceColumns(p, from, to) }
 
 // WithBackground makes each line self-sufficient about its background:
 // the line is prefixed with bg, and bg is re-applied after every reset

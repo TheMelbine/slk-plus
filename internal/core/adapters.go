@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io/fs"
 
+	"github.com/gammons/slk/internal/core/blocks"
 	"github.com/gammons/slk/internal/ids"
 )
 
@@ -73,6 +74,50 @@ func (r reactionAdapter) RecordFrecent(emoji string) {
 		return
 	}
 	r.recordFrecent(emoji)
+}
+
+// InteractionServiceFuncs bundles the closures behind an InteractionService.
+// A nil func makes its method return errors.ErrUnsupported.
+type InteractionServiceFuncs struct {
+	PressAttachmentAction func(channelID ids.ChannelID, messageTS ids.MessageTS,
+		attachmentID int, callbackID, serviceID string, action blocks.LegacyAction, ephemeral bool) error
+}
+
+// NewInteractionService builds an InteractionService from fns. Used by
+// cmd/slk/main.go (production wiring) and tests.
+func NewInteractionService(fns InteractionServiceFuncs) InteractionService {
+	return interactionAdapter{fns: fns}
+}
+
+type interactionAdapter struct{ fns InteractionServiceFuncs }
+
+func (i interactionAdapter) PressAttachmentAction(channelID ids.ChannelID, messageTS ids.MessageTS,
+	attachmentID int, callbackID, serviceID string, action blocks.LegacyAction, ephemeral bool) error {
+	if i.fns.PressAttachmentAction == nil {
+		return errors.ErrUnsupported
+	}
+	return i.fns.PressAttachmentAction(channelID, messageTS, attachmentID, callbackID, serviceID, action, ephemeral)
+}
+
+// CommandServiceFuncs bundles the closures behind a CommandService. A nil
+// func makes its method return errors.ErrUnsupported.
+type CommandServiceFuncs struct {
+	Run func(teamID string, channelID ids.ChannelID, threadTS ids.ThreadTS, command, args string) error
+}
+
+// NewCommandService builds a CommandService from fns. Used by
+// cmd/slk/main.go (production wiring) and tests.
+func NewCommandService(fns CommandServiceFuncs) CommandService {
+	return commandAdapter{fns: fns}
+}
+
+type commandAdapter struct{ fns CommandServiceFuncs }
+
+func (c commandAdapter) Run(teamID string, channelID ids.ChannelID, threadTS ids.ThreadTS, command, args string) error {
+	if c.fns.Run == nil {
+		return errors.ErrUnsupported
+	}
+	return c.fns.Run(teamID, channelID, threadTS, command, args)
 }
 
 // ThreadServiceFuncs is the closure bundle accepted by
@@ -149,30 +194,44 @@ func (t threadAdapter) ThreadLastRead(channelID ids.ChannelID, threadTS ids.Thre
 	return t.fns.ThreadLastRead(channelID, threadTS)
 }
 
-// NewActivityService builds an ActivityService from closures. Either
-// may be nil; the resulting service no-ops that operation (returns a
-// nil Msg).
-func NewActivityService(fetch ActivityFetchFunc, hydrate ActivityHydrateFunc) ActivityService {
-	return activityAdapter{fetch: fetch, hydrate: hydrate}
+// ActivityServiceFuncs is the closure bundle accepted by
+// NewActivityService. Any field may be nil; the resulting service
+// no-ops that operation (returns a nil Msg).
+type ActivityServiceFuncs struct {
+	Fetch   ActivityFetchFunc
+	Hydrate ActivityHydrateFunc
+	SetRead ActivitySetReadFunc
+}
+
+// NewActivityService builds an ActivityService from an
+// ActivityServiceFuncs bundle.
+func NewActivityService(fns ActivityServiceFuncs) ActivityService {
+	return activityAdapter{fns: fns}
 }
 
 type activityAdapter struct {
-	fetch   ActivityFetchFunc
-	hydrate ActivityHydrateFunc
+	fns ActivityServiceFuncs
 }
 
 func (a activityAdapter) Fetch(teamID ids.TeamID, limit int, unreadOnly bool) Msg {
-	if a.fetch == nil {
+	if a.fns.Fetch == nil {
 		return nil
 	}
-	return a.fetch(teamID, limit, unreadOnly)
+	return a.fns.Fetch(teamID, limit, unreadOnly)
 }
 
 func (a activityAdapter) Hydrate(teamID ids.TeamID, refs map[string][]string) Msg {
-	if a.hydrate == nil {
+	if a.fns.Hydrate == nil {
 		return nil
 	}
-	return a.hydrate(teamID, refs)
+	return a.fns.Hydrate(teamID, refs)
+}
+
+func (a activityAdapter) SetRead(teamID ids.TeamID, item ActivityItem, read bool) Msg {
+	if a.fns.SetRead == nil {
+		return nil
+	}
+	return a.fns.SetRead(teamID, item, read)
 }
 
 // MessageServiceFuncs is the closure bundle accepted by
@@ -256,7 +315,6 @@ type ChannelServiceFuncs struct {
 	OpenConversation    func(userIDs []string, requestID uint64) Cmd
 	SearchRemote        func(query string) []ChannelFinderItem
 	ToggleStar          func(channelID ids.ChannelID) Msg
-	RunCommand          func(channelID ids.ChannelID, threadTS, command, text string) Msg
 	SectionCollapse     func(teamID string) map[string]bool
 	SaveSectionCollapse func(teamID, sectionKey string, collapsed bool)
 	CycleNotifyLevel    func(channelID ids.ChannelID) Msg
@@ -339,13 +397,6 @@ func (c channelAdapter) SaveSectionCollapse(teamID, sectionKey string, collapsed
 	if c.fns.SaveSectionCollapse != nil {
 		c.fns.SaveSectionCollapse(teamID, sectionKey, collapsed)
 	}
-}
-
-func (c channelAdapter) RunCommand(channelID ids.ChannelID, threadTS, command, text string) Msg {
-	if c.fns.RunCommand == nil {
-		return nil
-	}
-	return c.fns.RunCommand(channelID, threadTS, command, text)
 }
 
 func (c channelAdapter) ToggleStar(channelID ids.ChannelID) Msg {
@@ -562,20 +613,20 @@ func (p presenceAdapter) SendTyping(channelID string) {
 
 // NewSettingsService builds a SettingsService from closures.
 func NewSettingsService(
-	saveTheme func(name string, scope ThemeScope),
+	saveTheme func(teamID, name string, scope ThemeScope),
 	saveSidebarWidth func(width int),
 ) SettingsService {
 	return settingsAdapter{saveTheme: saveTheme, saveSidebarWidth: saveSidebarWidth}
 }
 
 type settingsAdapter struct {
-	saveTheme        func(name string, scope ThemeScope)
+	saveTheme        func(teamID, name string, scope ThemeScope)
 	saveSidebarWidth func(width int)
 }
 
-func (s settingsAdapter) SaveTheme(name string, scope ThemeScope) {
+func (s settingsAdapter) SaveTheme(teamID, name string, scope ThemeScope) {
 	if s.saveTheme != nil {
-		s.saveTheme(name, scope)
+		s.saveTheme(teamID, name, scope)
 	}
 }
 
@@ -755,6 +806,10 @@ type ActivityFetchFunc func(teamID ids.TeamID, limit int, unreadOnly bool) Msg
 // ActivityHydrateFunc fetches message bodies for a page's refs.
 // Returns the resulting Msg (typically ActivityBodiesLoadedMsg).
 type ActivityHydrateFunc func(teamID ids.TeamID, refs map[string][]string) Msg
+
+// ActivitySetReadFunc marks one Activity item read (read=true) or
+// unread in teamID's feed.
+type ActivitySetReadFunc func(teamID ids.TeamID, item ActivityItem, read bool) Msg
 
 type ReactionAddFunc func(channelID ids.ChannelID, messageTS ids.MessageTS, emoji string) error
 type ReactionRemoveFunc func(channelID ids.ChannelID, messageTS ids.MessageTS, emoji string) error

@@ -1,12 +1,7 @@
 // internal/ui/mode_confirm.go
 //
-// Confirm-mode key handler (Phase 5j).
-//
-// Forwards normalised keys to the confirm prompt overlay.
-// HandleKey returns a result whose Cmd carries the action the
-// caller registered when opening the prompt (e.g. "really quit?"
-// returns the quit cmd on Enter). Mode drops back to Normal when
-// the prompt closes itself.
+// Confirm-mode key handler. The prompt closes itself on any key, so mode drops
+// back once it reports hidden.
 package ui
 
 import (
@@ -14,17 +9,29 @@ import (
 )
 
 func handleConfirmMode(a *App, msg tea.KeyMsg) tea.Cmd {
-	keyStr := msg.String()
-	// Collapse a modified Enter ("shift+enter") to "enter" so it
-	// confirms. Escape needs no such arm: confirmprompt cancels on
-	// every key it does not recognise.
-	if msg.Key().Code == tea.KeyEnter {
-		keyStr = "enter"
-	}
+	var cmd tea.Cmd
+	a.confirmPrompt, cmd = a.confirmPrompt.Update(msg)
+	return a.afterConfirmPrompt(cmd)
+}
 
-	res := a.confirmPrompt.HandleKey(keyStr)
+// afterConfirmPrompt runs after every key or click the confirm prompt
+// handles: once the prompt reports hidden, mode drops back to normal.
+func (a *App) afterConfirmPrompt(cmd tea.Cmd) tea.Cmd {
 	if !a.confirmPrompt.IsVisible() {
+		restore, thread := a.shownPromptInsert, a.shownPromptThread
+		a.clearShownPrompt()
+		if restore {
+			a.SetMode(ModeInsert)
+			var focus tea.Cmd
+			if thread {
+				focus = a.threadCompose.Focus()
+			} else {
+				focus = a.compose.Focus()
+			}
+			return tea.Batch(cmd, focus, a.tryOpenActionPrompt())
+		}
 		a.SetMode(ModeNormal)
+		return tea.Batch(cmd, a.tryOpenActionPrompt())
 	}
-	return res.Cmd
+	return cmd
 }

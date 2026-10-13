@@ -12,7 +12,7 @@
 | `Esc` | Insert / Command | Return to normal mode |
 | `Enter` | Insert | Send message |
 | `Shift+Enter` | Insert | Newline |
-| `/` | Insert (start of message) | Slash command picker: `Tab`/`Enter` completes the name, `Enter` on the full line runs it. An unknown command is refused and the draft stays; start with a space to send `/...` as text. Responses only you see are marked "only visible to you" and vanish on reload |
+| `/name args` then `Enter` | Insert (start of message) | Run a slash command instead of posting it: `/open`, `/join`, `/msg`, `/away` and `/status` run inside slk, anything else goes to Slack. If a command fails, its text comes back to the composer; start with a space to send `/...` as text. Responses only you see are marked "only visible to you"; `b` on one with buttons responds to them |
 | `Ctrl+V` | Insert | Smart paste — image / file path / text (use `Ctrl+V`, not the terminal's `Ctrl+Shift+V`) |
 | `Ctrl+U` | Insert | Clear compose (text + pending attachments) |
 | `Ctrl+E` | Insert | Edit the draft in `$VISUAL` / `$EDITOR` (or `compose.editor`) |
@@ -25,14 +25,22 @@
 | `/` | Normal | Search in channel (vim-style; searches cached history of the current channel) |
 | `n` / `N` | Normal | Next / previous search match (wraps) |
 | `a` / `A` | Normal | Jump to next / previous unread channel (wraps). Muted channels and channels set to mentions only or nothing are skipped |
-| `Ctrl+h` / `Ctrl+l` | Normal | Navigate back / forward through visited channels (`Ctrl+k` also works) |
+| `Ctrl+h` / `Ctrl+l` | Normal | Navigate back / forward through visited channels, returning to the message you were reading when you left (`Ctrl+k` also works) |
 | `Esc` | Normal (search active) | Clear active search |
+| `M{a-z}` | Normal (message) | Set a session mark on the selected message — lost when slk exits |
+| `M{A-Z}` | Normal (message) | Set a persistent mark — survives a restart |
+| `'{letter}` / `` `{letter} `` | Normal | Jump to a mark: opens the channel, loads history if needed, opens the thread and selects the reply |
+| `''` / ` `` ` | Normal | Back-jump to where you jumped from; press again to return |
+| `:marks` | Normal | List every mark in the workspace with its channel and message preview |
+| `:delmarks abc` | Normal | Delete marks by letter (`:delmarks a b c` works too) |
+| `Backspace` | Marks overlay | Delete the selected mark |
 | `Ctrl+f` | Any | Search workspace (Slack server-side; supports modifiers like `from:@user`, `in:#channel`, `before:YYYY-MM-DD`) |
 | `Ctrl+b` | Any | Toggle sidebar |
 | `Ctrl+]` | Any | Toggle thread panel |
 | `Ctrl+a` | Normal | Toggle the Activity view (mentions, thread replies, reactions, DMs) |
 | `:activity` | Normal | Open the Activity view |
 | `u` | Normal (activity) | Toggle the Activity view's unread-only filter |
+| `U` | Normal (activity) | Toggle the selected Activity item read/unread |
 | `Ctrl+t` / `Ctrl+p` | Any | Fuzzy channel finder |
 | `:ws` | Normal | Workspace picker |
 | `1`–`9` | Normal | Jump to workspace N |
@@ -55,6 +63,7 @@
 | `l` / `→` | Preview | Next image (when message has multiple) |
 | Click | Any (on image) | Open full-screen preview |
 | `Ctrl+y` | Any | Switch theme |
+| `Alt+y` / `Alt+Shift+y` | Normal | Next / previous theme (wraps; saved per workspace) |
 | `Ctrl+s` | Any | Set status (Active / Away / DND snooze) |
 | `q` | Normal | Quit (with confirmation) |
 | `Q` | Normal | Quit immediately |

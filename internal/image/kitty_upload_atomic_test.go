@@ -43,6 +43,24 @@ func TestEmitKittyUpload_MultiChunkPayloadIsOneWrite(t *testing.T) {
 	}
 }
 
+// Every upload must first delete the id's existing placements. Image ids
+// restart at 2 each run, and Ghostty (through 1.3.x) keeps a re-sent
+// id's old virtual placements, then sizes placeholder cells from
+// whichever of them it finds first. A 2x1 emoji placement left by an
+// earlier run at the same id squeezed the image preview and avatars
+// into a few cells.
+func TestEmitKittyUpload_DeletesStalePlacementsFirst(t *testing.T) {
+	rec := &writeRecorder{}
+	if err := emitKittyUpload(rec, 42, "QUJD", 90, 32); err != nil {
+		t.Fatal(err)
+	}
+	got := string(rec.writes[0])
+	del := forTerminal("\x1b_Ga=d,d=I,i=42,q=2\x1b\\")
+	if !strings.HasPrefix(got, del) {
+		t.Errorf("upload does not start by deleting id 42's placements:\n got %q\nwant prefix %q", abbreviate(got), del)
+	}
+}
+
 // Many uploads racing through the serialized side channel must each
 // arrive as an unbroken run: a start chunk naming the id, then only that
 // upload's continuations until m=0.

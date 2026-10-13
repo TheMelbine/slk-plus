@@ -23,7 +23,6 @@ A fork of [slk](https://github.com/gammons/slk) by Grant Ammons with changes I w
 
 - Hotkeys work on a Cyrillic keyboard layout, including the `?` cheatsheet and `:` commands (`:й` is `:q`); pickers and the command line accept non-ASCII input
 - `:q` closes the focused window and quits in the last one, `:qa` quits
-- Slash commands: `/` at the start of a message opens a picker with the workspace's commands (built-ins and apps), `Enter` runs one, and "only visible to you" responses show up in the channel or thread. A typo is refused instead of being posted
 
 **Rendering**
 
@@ -58,7 +57,7 @@ Build from source: `go build -o bin/slk ./cmd/slk`. Keybindings: [wiki/Keybindin
 
 ## Highlights
 
-- Real-time messages, edits, deletes, reactions, typing indicators
+- Real-time messages, edits, deletes, reactions, typing indicators, apps' "working" status
 - Inline images (kitty graphics / sixel / half-block fallback) with full-screen preview
 - Threads side panel + a workspace-wide threads view
 - Activity feed: mentions, thread replies, reactions, and DMs in one list, like Slack's Activity tab

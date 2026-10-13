@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/gammons/slk/internal/cache"
 	"github.com/gammons/slk/internal/config"
 	"github.com/gammons/slk/internal/core"
+	"github.com/gammons/slk/internal/core/blocks"
 	"github.com/gammons/slk/internal/debuglog"
 	"github.com/gammons/slk/internal/editor"
 	emojiwidth "github.com/gammons/slk/internal/emoji"
@@ -227,6 +229,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+
+	// <!date tokens render their {time} clock with the same
+	// timestamp_format the message stamps use, so every clock in the
+	// TUI follows one setting.
+	messages.SetDateTokenTimeLayout(cfg.Appearance.TimestampFormat)
 
 	// Load custom themes and apply the active theme
 	themesDir := filepath.Join(configDir, "themes")
@@ -621,14 +628,15 @@ func run() error {
 	))
 
 	// Wire theme switcher: dispatch to the appropriate saver based on scope.
-	saveTheme := func(name string, scope core.ThemeScope) {
+	// A workspace save names its workspace instead of reading
+	// router.Active(): a switch moves router.Active() before the UI shows
+	// the new workspace, and the choice belongs to the one it showed.
+	saveTheme := func(teamID, name string, scope core.ThemeScope) {
 		switch scope {
 		case themeswitcher.ScopeWorkspace:
-			active := router.Active()
-			if active == nil {
-				return // shouldn't happen, but guard against it
+			if teamID == "" {
+				return // no workspace was showing yet
 			}
-			teamID := active.TeamID
 			teamName := teamID
 			if wctx := router.ByID(teamID); wctx != nil && wctx.TeamName != "" {
 				teamName = wctx.TeamName
@@ -915,13 +923,6 @@ func run() error {
 				if err := db.SetSectionCollapsed(teamID, sectionKey, collapsed); err != nil {
 					debuglog.Cache("SaveSectionCollapse %s/%s: %v", teamID, sectionKey, err)
 				}
-			},
-			RunCommand: func(channelID ids.ChannelID, threadTS, command, text string) core.Msg {
-				wctx := router.Active()
-				if wctx == nil || wctx.Client == nil {
-					return nil
-				}
-				return runSlashCommand(context.Background(), wctx.Client, string(channelID), threadTS, command, text)
 			},
 			ToggleStar: func(channelID ids.ChannelID) core.Msg {
 				wctx := router.Active()
@@ -1329,10 +1330,54 @@ func run() error {
 			},
 		}))
 
-		app.SetActivityService(core.NewActivityService(
-			activityFetchFunc(router),
-			activityHydrateFunc(router),
-		))
+		app.SetActivityService(core.NewActivityService(core.ActivityServiceFuncs{
+			Fetch:   activityFetchFunc(router),
+			Hydrate: activityHydrateFunc(router),
+			SetRead: activitySetReadFunc(router),
+		}))
+
+		app.SetMarksPersistStore(ui.NewMarksPersistStore(ui.MarksPersistStoreFuncs{
+			Upsert: func(teamID, letter string, m ui.Mark) error {
+				return db.UpsertMark(teamID, letter, cache.Mark{
+					ChannelID:   string(m.ChannelID),
+					MessageTS:   string(m.MessageTS),
+					ThreadTS:    string(m.ThreadTS),
+					ChannelName: m.ChannelName,
+					AuthorName:  m.AuthorName,
+					Excerpt:     m.Excerpt,
+				})
+			},
+			List: func(teamID string) ([]ui.Mark, error) {
+				rows, err := db.ListMarks(teamID)
+				if err != nil {
+					return nil, err
+				}
+				out := make([]ui.Mark, 0, len(rows))
+				for _, r := range rows {
+					out = append(out, ui.Mark{
+						Location: ui.Location{
+							TeamID:    ids.TeamID(r.WorkspaceID),
+							ChannelID: ids.ChannelID(r.ChannelID),
+							MessageTS: ids.MessageTS(r.MessageTS),
+							ThreadTS:  ids.ThreadTS(r.ThreadTS),
+						},
+						Letter:      r.Letter,
+						ChannelName: r.ChannelName,
+						AuthorName:  r.AuthorName,
+						Excerpt:     r.Excerpt,
+					})
+				}
+				return out, nil
+			},
+			Delete: func(teamID, letter string) error {
+				return db.DeleteMark(teamID, letter)
+			},
+		}))
+		// [marks] options: persist_all (default off) and
+		// show_jump_overlay (default on, resolved from the *bool so an
+		// explicit false is distinguishable from unset).
+		app.SetMarksPersistAll(cfg.Marks.PersistAll)
+		app.SetShowJumpOverlay(cfg.EffectiveShowJumpOverlay())
 
 		app.SetReactionService(core.NewReactionService(
 			func(channelID ids.ChannelID, messageTS ids.MessageTS, emojiName string) error {
@@ -1372,6 +1417,32 @@ func run() error {
 			},
 		))
 
+		app.SetInteractionService(core.NewInteractionService(core.InteractionServiceFuncs{
+			PressAttachmentAction: func(channelID ids.ChannelID, messageTS ids.MessageTS,
+				attachmentID int, callbackID, serviceID string, action blocks.LegacyAction, ephemeral bool) error {
+				wctx := router.Active()
+				if wctx == nil {
+					return errors.New("no active workspace")
+				}
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
+				return pressAttachmentAction(ctx, wctx.Client, channelID, messageTS, attachmentID, callbackID, serviceID, action, ephemeral)
+			},
+		}))
+
+		app.SetCommandService(core.NewCommandService(core.CommandServiceFuncs{
+			Run: func(teamID string, channelID ids.ChannelID, threadTS ids.ThreadTS, command, args string) error {
+				// The user may have switched workspaces since pressing Enter.
+				wctx := router.ByID(teamID)
+				if wctx == nil || wctx.Client == nil {
+					return fmt.Errorf("running %s: workspace %q is unavailable", command, teamID)
+				}
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
+				return runCommand(ctx, wctx.Client, channelID, threadTS, command, args)
+			},
+		}))
+
 		sendTyping := func(channelID string) {
 			wctx := router.Active()
 			if wctx == nil {
@@ -1399,18 +1470,10 @@ func run() error {
 		// outer cfg, for the same reason.
 		router.Set(wctx)
 
-		// Build external-user set from cached records so the mention
-		// picker reflects Slack Connect / shared-channel guest status
-		// for the workspace we're switching into. Best-effort: empty
-		// map on error.
-		external := map[string]bool{}
-		if users, err := db.ListUsers(wctx.TeamID); err == nil {
-			for _, u := range users {
-				if u.IsExternal {
-					external[u.ID] = true
-				}
-			}
-		}
+		// Profiles are cached globally; classification is relative to the
+		// workspace being displayed, not the profile's first cache owner.
+		// Best-effort: nil on error (the picker shows no external flags).
+		external, _ := db.ExternalUsers(wctx.TeamID)
 
 		// Statuses are re-read from the cache, which live changes keep
 		// current, rather than the connect-time items. DND is not
@@ -1569,7 +1632,6 @@ func run() error {
 			router.Add(wctx)
 			wsMgr.AddWorkspace(wctx.TeamID, wctx.TeamName, "")
 			go loadWorkspaceIcon(ctx, wctx.Client, wctx.TeamID, avatarCache)
-			go loadSlashCommands(ctx, wctx.Client, wctx.TeamID, p.Send)
 
 			// Decide whether this workspace becomes the active one.
 			// If default_workspace resolved to a team ID, only that
@@ -1644,22 +1706,11 @@ func run() error {
 			}
 			wctx.RTMHandler = handler
 			wctx.ConnMgr = slackclient.NewConnectionManager(wctx.Client, handler)
-			go wctx.ConnMgr.Run(ctx)
 
-			// Build external-user set from cached records so the
-			// mention picker can flag Slack Connect / shared-channel
-			// guests on first render, without waiting for fresh
-			// userResolver lookups. Best-effort: empty map on error
-			// (the picker just won't flag anyone until live resolution
-			// fires).
-			external := map[string]bool{}
-			if users, err := db.ListUsers(wctx.TeamID); err == nil {
-				for _, u := range users {
-					if u.IsExternal {
-						external[u.ID] = true
-					}
-				}
-			}
+			// Use the same workspace-relative cache projection as switching,
+			// including profiles first cached by a different workspace.
+			// Best-effort: nil on error, until live resolution fills the flags.
+			external, _ := db.ExternalUsers(wctx.TeamID)
 
 			readyStatuses := cachedPeerStatuses(db, wctx.TeamID)
 			wctx.PeerStatus.SeedHuddles(readyStatuses)
@@ -1672,8 +1723,9 @@ func run() error {
 				Domain:       wctx.Client.TeamSubdomain(),
 				Theme:        cfgSnap.ResolveTheme(wctx.TeamID),
 				SidebarWidth: cfgSnap.ResolveWidth(wctx.TeamID),
-				Channels:     wctx.Channels,
-				FinderItems:  wctx.FinderItems,
+				// Detach both UI snapshots before the event owner starts.
+				Channels:    slices.Clone(wctx.Channels),
+				FinderItems: slices.Clone(wctx.FinderItems),
 				// A private copy: the UI must never share a map with
 				// the engine's goroutines (see userNameStore).
 				UserNames:        readyNames,
@@ -1691,6 +1743,10 @@ func run() error {
 			// the Ready message; anything the notifier sends is
 			// processed after it.
 			wctx.UserNames.NotifyFrom(readySeq, uiNameNotifier(wctx.TeamID, p.Send))
+
+			// Live repairs may mutate workspace slices. Start their owner only
+			// after cloning and handing off the startup snapshots above.
+			go wctx.ConnMgr.Run(ctx)
 
 			// Fetch the workspace's custom emoji in the background. When
 			// done, a follow-up message makes rendering and the emoji
@@ -1746,29 +1802,7 @@ func run() error {
 	}).Run(wakeCtx)
 
 	_, err = p.Run()
-
-	// Dump the API request tally before anything else at shutdown.
-	//
-	// Phase 2b's success criteria are call counts -- "a boot issues
-	// <= 10 API calls, with zero users.list and zero per-channel
-	// conversations.history fan-out" -- and nothing in slk could
-	// report them. Reconstructing the numbers from a debug log only
-	// worked at all because triggerBackfill happens to log per
-	// channel; there was no way to see users.list or a total.
-	//
-	// Nobody is testing slk against a real Enterprise Grid account
-	// until the whole grid-parity series lands, so this is the only
-	// feedback loop the work has.
-	if debuglog.Enabled() {
-		debuglog.General("shutdown API request tally:\n%s", slackhttp.DefaultCounter.Report())
-	}
-
-	// Clean up connection managers
-	for _, wctx := range router.All() {
-		if wctx.ConnMgr != nil {
-			wctx.ConnMgr.Stop()
-		}
-	}
+	shutdown(app, router)
 
 	return err
 }

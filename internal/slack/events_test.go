@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,13 +17,14 @@ type dndChangeRecord struct {
 }
 
 type mockEventHandler struct {
-	ephemeral           []string
 	messages            []string
+	ephemerals          []EphemeralMessage
 	subtypes            []string
 	deletedMessages     []string
 	reactions           []string
 	presenceChanges     []string
 	typingEvents        []string
+	assistantStatuses   []AssistantStatus
 	selfPresenceChanges []string
 	dndChanges          []dndChangeRecord
 	lastBlocks          slack.Blocks
@@ -54,6 +56,7 @@ type mockEventHandler struct {
 	userInvalidated   []string
 	dndInvalidated    []string
 	userDNDChanges    []userDNDRecord
+	viewsOpened       []string
 }
 
 type userStatusRecord struct {
@@ -103,8 +106,12 @@ func (m *mockEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subt
 	m.lastUsername = username
 }
 
-func (m *mockEventHandler) OnEphemeralMessage(channelID, userID, ts, text, threadTS string, blocks slack.Blocks, attachments []slack.Attachment, botID, username string) {
-	m.ephemeral = append(m.ephemeral, text)
+func (m *mockEventHandler) OnEphemeralMessage(msg EphemeralMessage) {
+	m.ephemerals = append(m.ephemerals, msg)
+}
+
+func (m *mockEventHandler) OnViewOpened(title string) {
+	m.viewsOpened = append(m.viewsOpened, title)
 }
 
 func (m *mockEventHandler) OnMessageDeleted(channelID, ts string) {
@@ -121,6 +128,9 @@ func (m *mockEventHandler) OnPresenceChange(userID, presence string) {
 }
 func (m *mockEventHandler) OnUserTyping(channelID, userID string) {
 	m.typingEvents = append(m.typingEvents, channelID+":"+userID)
+}
+func (m *mockEventHandler) OnAssistantStatus(s AssistantStatus) {
+	m.assistantStatuses = append(m.assistantStatuses, s)
 }
 func (m *mockEventHandler) OnConnect()    {}
 func (m *mockEventHandler) OnDisconnect() {}
@@ -216,8 +226,8 @@ func TestDispatchWebSocketEphemeralMessage(t *testing.T) {
 	if len(handler.messages) != 0 {
 		t.Errorf("ephemeral message reached OnMessage: %v", handler.messages)
 	}
-	if len(handler.ephemeral) != 1 || handler.ephemeral[0] != "Need some help?" {
-		t.Errorf("ephemeral = %v", handler.ephemeral)
+	if len(handler.ephemerals) != 1 || handler.ephemerals[0].Text != "Need some help?" {
+		t.Errorf("ephemerals = %v", handler.ephemerals)
 	}
 }
 
@@ -353,6 +363,32 @@ func TestDispatchWebSocketUserTypingEvent(t *testing.T) {
 	}
 	if handler.typingEvents[0] != "C1:U1" {
 		t.Errorf("expected 'C1:U1', got %q", handler.typingEvents[0])
+	}
+}
+
+// The two frames a bot's "working" indicator produced on a real
+// workspace (2026-10-13 capture): Atlas set "Thinking..." on the thread
+// under the user's mention, then cleared it with an empty status just
+// before posting its reply.
+func TestDispatchWebSocketAIAssistantStatusEvent(t *testing.T) {
+	handler := &mockEventHandler{}
+
+	set := []byte(`{"type":"ai_assistant_status","channel_id":"C0B1PMJJULE","status":"Thinking...","bot_user_id":"U0AQYKDUF5G","thread_ts":"1791884373.622309","status_type":"banner","event_ts":"1791884374.000700","ts":"1791884374.000700"}`)
+	clear := []byte(`{"type":"ai_assistant_status","channel_id":"C0B1PMJJULE","status":"","bot_user_id":"U0AQYKDUF5G","thread_ts":"1791884373.622309","status_type":"banner","event_ts":"1791884378.000800","ts":"1791884378.000800"}`)
+	dispatchWebSocketEvent(set, handler)
+	dispatchWebSocketEvent(clear, handler)
+
+	want := []AssistantStatus{
+		{ChannelID: "C0B1PMJJULE", ThreadTS: "1791884373.622309", BotUserID: "U0AQYKDUF5G", Status: "Thinking..."},
+		{ChannelID: "C0B1PMJJULE", ThreadTS: "1791884373.622309", BotUserID: "U0AQYKDUF5G", Status: ""},
+	}
+	if len(handler.assistantStatuses) != len(want) {
+		t.Fatalf("got %d assistant statuses, want %d: %+v", len(handler.assistantStatuses), len(want), handler.assistantStatuses)
+	}
+	for i := range want {
+		if handler.assistantStatuses[i] != want[i] {
+			t.Errorf("status %d = %+v, want %+v", i, handler.assistantStatuses[i], want[i])
+		}
 	}
 }
 
@@ -868,5 +904,135 @@ func TestDispatch_ChannelMarked_AbsentMentionCountIsZero(t *testing.T) {
 	}
 	if got := handler.channelMarks[0].mentionCount; got != 0 {
 		t.Errorf("mentionCount = %d, want 0", got)
+	}
+}
+
+// topLevelFields feeds the "message raw fields" WS debug line, which
+// exists to surface whatever marks a message ephemeral. That marker can
+// sit after kilobytes of blocks, so every top-level key must appear
+// regardless of position, with nested values abbreviated.
+func TestTopLevelFields_ListsEveryKeyAndAbbreviatesNested(t *testing.T) {
+	data := []byte(`{"type":"message","attachments":[{"id":1}],"blocks":[],"user":"USLACKBOT","is_ephemeral":true,"n":3,"meta":{"a":1}}`)
+	got := topLevelFields(data)
+	want := `attachments=[…] blocks=[…] is_ephemeral=true meta={…} n=3 type="message" user="USLACKBOT"`
+	if got != want {
+		t.Errorf("topLevelFields =\n  %s\nwant\n  %s", got, want)
+	}
+}
+
+// capturedMentionEphemeral is Slackbot's "not in this channel" frame as
+// captured from the Slack web client (IDs replaced with placeholders).
+const capturedMentionEphemeral = `{"type":"message","subtype":"bot_message","channel":"C0EXAMPLE01",
+ "text":"You mentioned <@U0EXAMPLE01>, but they’re not in this private channel.",
+ "blocks":[{"type":"rich_text","block_id":"amnwN","elements":[{"type":"rich_text_section","elements":[
+   {"type":"text","text":"You mentioned "},{"type":"user","user_id":"U0EXAMPLE01"},
+   {"type":"text","text":", but they’re not in this private channel."}]}]}],
+ "username":"slackbot","user":"USLACKBOT","bot_id":"B01","ts":"1791541429.559220",
+ "attachments":[{"callback_id":"consistentephemeralmentions_U0EXAMPLE01_1791541429559219_0",
+   "fallback":"You may want to invite them.","id":1,"actions":[
+   {"id":"1","name":"invite","text":"Add Them","type":"button","value":"invite","style":"",
+    "confirm":{"text":"New members will be able to see all of the channel's history, including any files that have been shared in the channel.",
+               "title":"Are you sure you want to add them?","ok_text":"Add","dismiss_text":"Cancel"}},
+   {"id":"2","name":"ignore","text":"Dismiss","type":"button","value":"ignore","style":""},
+   {"id":"3","name":"dont-show-again","text":"Don't Show Again","type":"button","value":"dont-show-again","style":""}]}],
+ "is_ephemeral":true,"event_ts":"1791541429.004800"}`
+
+func TestDispatchEphemeralMessage_RoutesToOnEphemeralMessage(t *testing.T) {
+	h := &mockEventHandler{}
+	dispatchWebSocketEvent([]byte(capturedMentionEphemeral), h)
+
+	if len(h.messages) != 0 {
+		t.Fatalf("OnMessage called %d times, want 0: an ephemeral must not take the cached path", len(h.messages))
+	}
+	if len(h.ephemerals) != 1 {
+		t.Fatalf("OnEphemeralMessage called %d times, want 1", len(h.ephemerals))
+	}
+	got := h.ephemerals[0]
+	if got.ChannelID != "C0EXAMPLE01" || got.UserID != "USLACKBOT" || got.BotID != "B01" ||
+		got.Username != "slackbot" || got.TS != "1791541429.559220" || got.Subtype != "bot_message" {
+		t.Errorf("identity fields = %+v", got)
+	}
+	if len(got.Attachments) != 1 || got.Attachments[0].ID != 1 || len(got.Attachments[0].Actions) != 3 {
+		t.Fatalf("attachments not decoded: %+v", got.Attachments)
+	}
+	want := [][]string{{"1", "2", "3"}}
+	if fmt.Sprint(got.ActionIDs) != fmt.Sprint(want) {
+		t.Errorf("ActionIDs = %v, want %v", got.ActionIDs, want)
+	}
+}
+
+func TestDispatchMessageWithoutEphemeralFlag_StillRoutesToOnMessage(t *testing.T) {
+	h := &mockEventHandler{}
+	frame := strings.Replace(capturedMentionEphemeral, `"is_ephemeral":true,`, "", 1)
+	dispatchWebSocketEvent([]byte(frame), h)
+	if len(h.ephemerals) != 0 || len(h.messages) != 1 {
+		t.Errorf("ephemerals=%d messages=%d, want 0 and 1", len(h.ephemerals), len(h.messages))
+	}
+}
+
+// A non-string action id must not lose the message: ids are best-effort.
+func TestDispatchEphemeralMessage_NumericActionIDs(t *testing.T) {
+	h := &mockEventHandler{}
+	frame := `{"type":"message","channel":"C0EXAMPLE01","user":"USLACKBOT","ts":"1.000000","is_ephemeral":true,
+	  "attachments":[{"id":1,"actions":[{"id":7,"name":"x","text":"X","type":"button"}]}]}`
+	dispatchWebSocketEvent([]byte(frame), h)
+	if len(h.ephemerals) != 1 {
+		t.Fatalf("OnEphemeralMessage called %d times, want 1", len(h.ephemerals))
+	}
+	if got := h.ephemerals[0]; got.ActionIDs != nil || len(got.Attachments) != 1 {
+		t.Errorf("ActionIDs = %v (want nil), attachments = %d (want 1)", got.ActionIDs, len(got.Attachments))
+	}
+}
+
+// An edit of an ephemeral (Slack replacing an app's preview) must not
+// reach OnMessage, which would cache it. Part A drops it.
+func TestDispatchEphemeralMessageChanged_IsDropped(t *testing.T) {
+	for name, frame := range map[string]string{
+		"flag on event": `{"type":"message","subtype":"message_changed","channel":"C1","is_ephemeral":true,
+		  "message":{"user":"U1","text":"shuffled","ts":"1.000000"}}`,
+		"flag on inner message": `{"type":"message","subtype":"message_changed","channel":"C1",
+		  "message":{"user":"U1","text":"shuffled","ts":"1.000000","is_ephemeral":true}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := &mockEventHandler{}
+			dispatchWebSocketEvent([]byte(frame), h)
+			if len(h.messages) != 0 || len(h.ephemerals) != 0 {
+				t.Errorf("messages=%d ephemerals=%d, want both 0", len(h.messages), len(h.ephemerals))
+			}
+		})
+	}
+}
+
+func TestDispatchViewOpened_CapturedFrame(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "ws_view_opened.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &mockEventHandler{}
+	dispatchWebSocketEvent(data, h)
+	if len(h.viewsOpened) != 1 || h.viewsOpened[0] != "Giphy" {
+		t.Fatalf("viewsOpened = %v, want [Giphy]", h.viewsOpened)
+	}
+}
+
+func TestDispatchViewOpened_FallsBackToTheViewTitle(t *testing.T) {
+	h := &mockEventHandler{}
+	dispatchWebSocketEvent([]byte(`{"type":"view_opened","view":{"title":{"type":"plain_text","text":"Polly"}}}`), h)
+	if len(h.viewsOpened) != 1 || h.viewsOpened[0] != "Polly" {
+		t.Fatalf("viewsOpened = %v, want [Polly]", h.viewsOpened)
+	}
+}
+
+// A live /me line used to be dropped: the message switch passed only
+// "", bot_message, thread_broadcast and file_share to OnMessage.
+func TestDispatchMeMessage_CapturedFrame(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "ws_me_message.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &mockEventHandler{}
+	dispatchWebSocketEvent(data, h)
+	if len(h.messages) != 1 || h.messages[0] != "waves" || h.subtypes[0] != "me_message" {
+		t.Fatalf("messages = %v subtypes = %v, want [waves] [me_message]", h.messages, h.subtypes)
 	}
 }

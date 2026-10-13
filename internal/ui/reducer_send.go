@@ -217,16 +217,17 @@ var reduceSend reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 				a.CloseThread()
 			}
 		}
-		return nil, true
+		return a.dropActionPrompt(m.ChannelID, m.TS), true
 	}
 	return nil, false
 }
 
 // reduceNewMessage handles NewMessageMsg. Extracted because the
-// arm is ~100 lines covering five decision branches (edit echo,
-// self-send dedup, early-arrival in-flight guard, the read-state
-// decision for the channel and thread cursors, threads-list dirty
-// bump).
+// arm is ~100 lines covering six decision branches (edit echo,
+// self-send dedup, early-arrival in-flight guard, the ephemeral
+// display-only return, the read-state decision for the channel and
+// thread cursors, threads-list dirty bump). The ephemeral branch
+// returns after the message is displayed, before any read-state work.
 func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 	debuglog.Cache("NewMessageMsg: channel=%s ts=%s thread_ts=%s active=%s",
 		m.ChannelID, m.Message.TS, m.Message.ThreadTS, a.activeChannelID)
@@ -270,10 +271,16 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 	// Cross-session messages from this user (sent via the official
 	// Slack client while slk is open) do NOT update
 	// lastSelfSendByChannel, so they pass through this guard.
-	if m.Message.UserID != "" && m.Message.UserID == a.currentUserID && a.selfSend.InFlight(m.ChannelID) {
+	// An ephemeral is never an echo of chat.postMessage, so it is exempt.
+	if !m.Message.Ephemeral && m.Message.UserID != "" && m.Message.UserID == a.currentUserID && a.selfSend.InFlight(m.ChannelID) {
 		debuglog.Cache("NewMessageMsg: channel=%s ts=%s decision=skipped_self_send_in_flight",
 			m.ChannelID, m.Message.TS)
 		return nil
+	}
+	// An app's message ends its "working" status in this channel even
+	// when the clearing ai_assistant_status never arrives.
+	if m.Message.UserID != "" {
+		a.typing.ClearBot(m.ChannelID, m.Message.UserID)
 	}
 	// Model writes fan out to EVERY window viewing the channel,
 	// focused or not (Phase 3): visible-but-unfocused windows show
@@ -290,7 +297,7 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 		if m.Message.ThreadTS == "" || m.Message.ThreadTS == m.Message.TS || isBroadcast {
 			mm.AppendMessage(cloneMessageItem(m.Message))
 		}
-		if m.Message.ThreadTS != "" && m.Message.ThreadTS != m.Message.TS {
+		if m.Message.ThreadTS != "" && m.Message.ThreadTS != m.Message.TS && !m.Message.Ephemeral {
 			mm.IncrementReplyCount(m.Message.ThreadTS, m.Message.TS, m.Message.UserID)
 		}
 	}
@@ -313,6 +320,23 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 		m.Message.ThreadTS == a.threadPanel.ThreadTS()
 	if inOpenThreadPanel {
 		a.threadPanel.AddReply(m.Message)
+	}
+	if m.Message.Ephemeral {
+		// Only the current user can see it, and Slack does not know it
+		// as a message in the conversation: no read cursor may land on
+		// its ts (Slack never returns it, so the cursor would sit
+		// behind a ghost), it changes no read state, and it does not
+		// make the threads list dirty. Display only.
+		debuglog.Cache("NewMessageMsg: channel=%s ts=%s decision=ephemeral_display_only",
+			m.ChannelID, m.Message.TS)
+		onScreen := inOpenThreadPanel ||
+			(a.view == ViewChannels && m.ChannelID == a.activeChannelID && (m.Message.ThreadTS == "" || m.Message.ThreadTS == m.Message.TS))
+		if onScreen && messages.HasButtonActions(m.Message) {
+			return a.enqueueActionPrompt(actionPromptRef{
+				channelID: m.ChannelID, ts: m.Message.TS, threadTS: m.Message.ThreadTS,
+			})
+		}
+		return nil
 	}
 	isThreadReply := m.Message.ThreadTS != "" && m.Message.ThreadTS != m.Message.TS
 	isBroadcast := m.Message.Subtype == "thread_broadcast"

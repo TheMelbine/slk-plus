@@ -32,6 +32,7 @@ func TestActivityGlyph(t *testing.T) {
 		"message_reaction":         "✦",
 		"dm":                       "→",
 		"bot_dm_bundle":            "→",
+		"saved_reminder":           "◷",
 		"something_unknown":        "•",
 		"":                         "•",
 	}
@@ -54,7 +55,7 @@ func TestActivityGlyphs_SingleCellAndNotEmoji(t *testing.T) {
 	if !emojiGlyphs["✉"] || !emojiGlyphs["☺"] {
 		t.Fatal("emoji.CodeMap no longer lists ✉ and ☺; this test cannot detect emoji-capable glyphs")
 	}
-	for _, typ := range []string{"at_user", "thread_v2", "message_reaction", "dm", "bot_dm_bundle", ""} {
+	for _, typ := range []string{"at_user", "thread_v2", "message_reaction", "dm", "bot_dm_bundle", "saved_reminder", ""} {
 		g := activityGlyph(typ)
 		if w := emoji.Width(g); w != 1 {
 			t.Errorf("glyph %q for %q is %d columns wide, want 1", g, typ, w)
@@ -396,7 +397,8 @@ func TestContextVerb(t *testing.T) {
 		"at_user_group": "Mention", "keyword": "Mention", "list_user_mentioned": "Mention",
 		"thread_v2": "Thread", "message_reaction": "Reacted",
 		"dm": "DM", "bot_dm_bundle": "DM",
-		"": "", "something_new": "",
+		"saved_reminder": "Reminder",
+		"":               "", "something_new": "",
 	}
 	for typ, want := range cases {
 		if got := contextVerb(typ); got != want {
@@ -445,6 +447,36 @@ func TestContextLabel_ByConversationType(t *testing.T) {
 		if got != c.want {
 			t.Errorf("%s: contextLabel = %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// An item type slk does not recognise used to render as a blank card:
+// no verb, and (with no item.message to take a channel from) no author
+// and no body either -- issue #285. The label falls back to the type
+// itself so the row says what it is.
+func TestContextLabel_UnknownTypeIsNeverBlank(t *testing.T) {
+	m := New(nil, "")
+	m.SetChannelNames(map[string]string{"C1": "general"})
+	cases := []struct {
+		name, typ, ch, want string
+	}{
+		{"unrecognised type, no channel", "brand_new_type", "", "Brand new type"},
+		{"unrecognised type in a channel", "something_new", "C1", "Something new in #general"},
+		{"empty type", "", "", "Unknown activity"},
+	}
+	for _, c := range cases {
+		got := ansi.Strip(m.contextLabel(core.ActivityItem{Type: c.typ, ChannelID: c.ch}))
+		if got != c.want {
+			t.Errorf("%s: contextLabel = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestRenderCard_UnknownTypeWithNoRefIsLabelled(t *testing.T) {
+	m := New(nil, "")
+	line1, _ := m.renderCard(core.ActivityItem{Key: "k", Type: "brand_new_type", FeedTS: "1700000000.000000", IsUnread: true}, 80, false)
+	if got := ansi.Strip(line1); !strings.Contains(got, "Brand new type") {
+		t.Errorf("card line 1 = %q, want it to name the item type", got)
 	}
 }
 
@@ -691,5 +723,51 @@ func TestRenderCard_ReadCardMutesSpans(t *testing.T) {
 		if got := fgBefore(t, l2, word); got != muted {
 			t.Errorf("%q colour = %s, want muted %s", word, got, muted)
 		}
+	}
+}
+
+// A Slack reminder has no message to preview, so its card names it and
+// says where to read it instead of leaving line 2 blank (issue #285).
+func TestRenderCard_SavedReminder(t *testing.T) {
+	m := New(nil, "")
+	l1, l2 := m.renderCard(core.ActivityItem{
+		Key: "k", Type: "saved_reminder", Subtype: "reminder",
+		FeedTS: "1700000000.000000", IsUnread: true,
+	}, 80, false)
+	line1, line2 := ansi.Strip(l1), ansi.Strip(l2)
+	if !strings.Contains(line1, "◷ Reminder") {
+		t.Errorf("line 1 = %q, want the reminder glyph and label", line1)
+	}
+	if !strings.Contains(line2, "Open Slack to see this reminder") {
+		t.Errorf("line 2 = %q, want the open-in-Slack hint", line2)
+	}
+}
+
+// SetItemRead changes one item's dot in place. It never removes the
+// item, even with the unread-only filter on, so U can undo; and it
+// reports a key that is gone (the feed was refetched meanwhile).
+func TestSetItemRead(t *testing.T) {
+	m := New(nil, "")
+	m.ToggleUnreadOnly()
+	m.SetItems([]core.ActivityItem{{Key: "a", IsUnread: true}, {Key: "b"}})
+	v := m.Version()
+
+	if !m.SetItemRead("a", true) {
+		t.Fatal(`SetItemRead("a", true) = false, want true`)
+	}
+	if m.Items()[0].IsUnread || m.UnreadCount() != 0 {
+		t.Errorf("item a still unread after SetItemRead(a, true): %+v", m.Items()[0])
+	}
+	if m.Version() == v {
+		t.Error("SetItemRead did not bump the version, so the frame would not redraw")
+	}
+	if len(m.Items()) != 2 {
+		t.Errorf("items = %d, want 2: marking read must not drop the item", len(m.Items()))
+	}
+	if !m.SetItemRead("b", false) || !m.Items()[1].IsUnread {
+		t.Errorf("SetItemRead(b, false) did not mark b unread: %+v", m.Items()[1])
+	}
+	if m.SetItemRead("gone", true) {
+		t.Error(`SetItemRead("gone", true) = true for a key not in the list`)
 	}
 }

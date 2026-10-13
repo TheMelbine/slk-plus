@@ -33,6 +33,10 @@ const (
 	cardStride       = cardContentLines + 1
 )
 
+// reminderHint fills line 2 of a Slack reminder's card: the feed carries
+// no reminder text.
+const reminderHint = "Open Slack to see this reminder"
+
 // glyphStyle colours the leading type glyph. A read card keeps it muted
 // with the rest of the card; an unread one gets the type's colour, so the
 // column of glyphs shows at a glance what is new and what kind it is.
@@ -416,6 +420,24 @@ func (m *Model) UnreadCount() int {
 	return n
 }
 
+// SetItemRead sets the read state of the item with the given key and
+// reports whether there was one: the list may have been refetched since
+// the caller took the item. The item stays in the list either way; with
+// the unread-only filter on, it goes on the next fetch.
+func (m *Model) SetItemRead(key string, read bool) bool {
+	for i := range m.items {
+		if m.items[i].Key != key {
+			continue
+		}
+		if m.items[i].IsUnread == read {
+			m.items[i].IsUnread = !read
+			m.dirty()
+		}
+		return true
+	}
+	return false
+}
+
 func (m *Model) clampSelection() {
 	if m.selected < 0 {
 		m.selected = 0
@@ -634,6 +656,9 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	// The renderer leaves plain text unstyled, so set the base text colour
 	// here (the message pane does the same via styles.MessageText). Only
 	// the foreground: a background would paint over the selection tint.
+	if it.Type == "saved_reminder" && preview == "" {
+		preview = card.Muted().Render(reminderHint)
+	}
 	preview = strings.ReplaceAll(preview, "\n", " ")
 	if !it.IsUnread {
 		// The renderer re-applies the theme text colour after each span
@@ -662,16 +687,40 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 // contextLabel names the conversation for line 1, muted: "#ch" for a
 // public channel, the slk glyph plus name for private channels and group
 // DMs. Empty for a DM item and for anything in a 1:1 DM (the other person
-// is already on the card), and for unknown item types.
+// is already on the card). The glyph tells the known types apart, so they
+// get no verb; a reminder ("Reminder") and an unrecognised type (see
+// fallbackVerb) are named, since such an item may carry no message ref
+// and so no author or body, and would otherwise render as a blank row.
 func (m *Model) contextLabel(it core.ActivityItem) string {
-	if contextVerb(it.Type) == "" || isDMItem(it.Type) {
+	if isDMItem(it.Type) {
 		return ""
 	}
-	ch := m.resolveChannel(it.ChannelID)
+	var name string
+	switch verb := contextVerb(it.Type); {
+	case verb == "":
+		name = fallbackVerb(it.Type)
+	case it.Type == "saved_reminder":
+		name = verb
+	}
+	where := m.conversationLabel(it.ChannelID)
+	switch {
+	case name == "":
+		return where
+	case where == "":
+		return card.Muted().Render(name)
+	default:
+		return card.Muted().Render(name+" in ") + where
+	}
+}
+
+// conversationLabel is the muted conversation name contextLabel shows;
+// empty for an unknown channel and for a 1:1 DM.
+func (m *Model) conversationLabel(channelID string) string {
+	ch := m.resolveChannel(channelID)
 	if ch == "" {
 		return ""
 	}
-	switch chType := m.channelTypes[it.ChannelID]; chType {
+	switch chType := m.channelTypes[channelID]; chType {
 	case "dm":
 		return ""
 	case "private", "group_dm":
@@ -699,15 +748,30 @@ func contextVerb(itemType string) string {
 		return "Reacted"
 	case "dm", "bot_dm_bundle":
 		return "DM"
+	case "saved_reminder":
+		return "Reminder"
 	default:
 		return ""
 	}
 }
 
+// fallbackVerb labels an item type contextVerb does not know, from the
+// type itself ("saved_reminder" -> "Saved reminder"). Such an item may
+// carry no message ref, leaving the card no author and no body, so
+// without this label it rendered as a blank row (issue #285).
+func fallbackVerb(itemType string) string {
+	if itemType == "" {
+		return "Unknown activity"
+	}
+	s := strings.ReplaceAll(itemType, "_", " ")
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 // activityGlyph returns the leading glyph for a row keyed on the item type:
 // "@" for mentions, the sidebar's thread flag for thread replies, a star
-// for reactions, and an arrow for DMs (not a dot: the dot means presence
-// and unread elsewhere). Each is one column wide
+// for reactions, an arrow for DMs (not a dot: the dot means presence
+// and unread elsewhere), and a clock face for reminders. Each is one
+// column wide
 // and has no colour-emoji form, so terminals agree on its width. Pure (no
 // styling) so it can be unit-tested.
 func activityGlyph(itemType string) string {
@@ -721,6 +785,8 @@ func activityGlyph(itemType string) string {
 		return "✦"
 	case "dm", "bot_dm_bundle":
 		return "→"
+	case "saved_reminder":
+		return "◷"
 	default:
 		return "•"
 	}

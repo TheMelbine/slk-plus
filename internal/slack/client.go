@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -205,7 +204,7 @@ func newCookieHTTPClient(dCookie string, env *slackhttp.Envelope) *http.Client {
 // apiHTTPClient returns the HTTP client every outbound request from
 // this Client must go through.
 //
-// GetUnreadCounts, callChannelSectionsList and GetStarredChannels used
+// GetUnreadCounts, callChannelSectionsList and GetStarredConversations used
 // to call newCookieHTTPClient directly instead. That was invisible in
 // two ways. It made a dropped envelope argument undetectable — a
 // mutation replacing their env argument with nil survived the whole
@@ -286,7 +285,8 @@ func (c *Client) UserID() string {
 	return c.userID
 }
 
-// WsDone returns a channel that is closed when the WebSocket read loop exits.
+// WsDone returns a channel closed after the WebSocket event owner exits,
+// including the reader stopping and OnDisconnect completing.
 func (c *Client) WsDone() <-chan struct{} {
 	return c.wsDone
 }
@@ -456,9 +456,12 @@ func (c *Client) StartWebSocket(handler EventHandler) error {
 		return conn.WriteControl(websocket.PongMessage, []byte(msg), time.Now().Add(10*time.Second))
 	})
 
+	// Reading and dispatching are separate so local deferred work can wake
+	// the event owner while the socket is idle. The unbuffered channel keeps
+	// frame delivery bounded; only the dispatch goroutine calls the handler.
+	messages := make(chan []byte)
 	go func() {
-		defer close(c.wsDone)
-		defer handler.OnDisconnect()
+		defer close(messages)
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
@@ -470,7 +473,27 @@ func (c *Client) StartWebSocket(handler EventHandler) error {
 			}
 			// Reset deadline on every successful read
 			conn.SetReadDeadline(time.Now().Add(wsTimeout))
-			dispatchWebSocketEvent(message, handler)
+			messages <- message
+		}
+	}()
+	go func() {
+		defer close(c.wsDone)
+		defer handler.OnDisconnect()
+		pendingHandler, _ := handler.(PendingEventHandler)
+		var pending <-chan struct{}
+		if pendingHandler != nil {
+			pending = pendingHandler.PendingEvents()
+		}
+		for {
+			select {
+			case message, ok := <-messages:
+				if !ok {
+					return
+				}
+				dispatchWebSocketEvent(message, handler)
+			case <-pending:
+				pendingHandler.OnPendingEvents()
+			}
 		}
 	}()
 
@@ -1761,9 +1784,8 @@ func (c *Client) GetChannelSectionsRaw(ctx context.Context) ([]byte, error) {
 	return c.callChannelSectionsList(ctx, "")
 }
 
-// starsListResponse is the JSON shape returned by stars.list. Only the
-// channel-typed items are relevant for the sidebar; message/file/IM stars
-// are ignored.
+// starsListResponse is the JSON shape returned by stars.list. Channel and
+// IM entries identify sidebar conversations; message/file/comment stars do not.
 type starsListResponse struct {
 	OK     bool            `json:"ok"`
 	Error  string          `json:"error"`
@@ -1781,16 +1803,15 @@ type starsListPaging struct {
 	Total int `json:"total"`
 }
 
-// GetStarredChannels calls stars.list and returns the IDs of channels the
-// user has starred. Slack's users.channelSections.list returns the stars
-// section with an empty channel_ids array (it doesn't populate built-in
-// section types); stars.list is the authoritative source for starred
-// channels. Only type=="channel" items are returned — message/file/IM stars
-// don't belong in the channel sidebar.
+// GetStarredConversations calls stars.list and returns unique conversation
+// IDs in first-seen order. Both channel and IM stars carry conversation IDs
+// (not user IDs); other star types are ignored even when they carry a channel.
+// Slack's channelSections.list leaves built-in membership empty, so this is
+// the authoritative source for the Starred sidebar section.
 //
-// Best-effort: on error the caller proceeds with an empty star list and
-// the stars section stays hidden (no regression vs pre-fix behavior).
-func (c *Client) GetStarredChannels(ctx context.Context) ([]string, error) {
+// Errors propagate to the caller, which may treat stars as best-effort. The
+// existing limit=1000 request is not paginated; large-list support is separate.
+func (c *Client) GetStarredConversations(ctx context.Context) ([]string, error) {
 	form := url.Values{"token": {c.token}, "limit": {"1000"}}
 	body := strings.NewReader(form.Encode())
 	endpoint := c.apiBaseURL + "stars.list"
@@ -1818,8 +1839,10 @@ func (c *Client) GetStarredChannels(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("stars.list API error: %s", slr.Error)
 	}
 	var ids []string
+	seen := make(map[string]bool)
 	for _, it := range slr.Items {
-		if it.Type == "channel" && it.Channel != "" {
+		if (it.Type == "channel" || it.Type == "im") && it.Channel != "" && !seen[it.Channel] {
+			seen[it.Channel] = true
 			ids = append(ids, it.Channel)
 		}
 	}
@@ -2391,77 +2414,4 @@ func (c *Client) TeamIcon(ctx context.Context) (string, error) {
 		}
 	}
 	return "", nil
-}
-
-// SlashCommand is one entry of commands.list: a built-in command, an
-// app's command, or a legacy service's.
-type SlashCommand struct {
-	Name    string // with the leading slash, e.g. "/remind"
-	Desc    string
-	Usage   string
-	AppName string // the app or service that owns it; "" for built-ins
-}
-
-// ListCommands returns the slash commands available in the workspace
-// (commands.list, the undocumented method the web client uses), sorted
-// by name. Aliases are left out.
-func (c *Client) ListCommands(ctx context.Context) ([]SlashCommand, error) {
-	raw, err := c.postForm(ctx, "commands.list", nil)
-	if err != nil {
-		return nil, err
-	}
-	if err := parseOKResponse("commands.list", raw); err != nil {
-		return nil, err
-	}
-	var resp struct {
-		Commands map[string]struct {
-			Name        string `json:"name"`
-			Desc        string `json:"desc"`
-			Usage       string `json:"usage"`
-			AppName     string `json:"app_name"`
-			ServiceName string `json:"service_name"`
-			AliasOf     string `json:"alias_of"`
-		} `json:"commands"`
-	}
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, fmt.Errorf("parsing commands.list: %w", err)
-	}
-	out := make([]SlashCommand, 0, len(resp.Commands))
-	for key, cmd := range resp.Commands {
-		if cmd.AliasOf != "" {
-			continue
-		}
-		name := cmd.Name
-		if name == "" {
-			name = key
-		}
-		owner := cmd.AppName
-		if owner == "" {
-			owner = cmd.ServiceName
-		}
-		out = append(out, SlashCommand{Name: name, Desc: cmd.Desc, Usage: cmd.Usage, AppName: owner})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
-}
-
-// RunCommand runs a slash command in channelID (chat.command, as the web
-// client does). command carries the leading slash; text is everything
-// after it. A non-empty threadTS runs it in that thread. Responses
-// arrive over the WebSocket, often as ephemeral messages.
-func (c *Client) RunCommand(ctx context.Context, channelID, command, text, threadTS string) error {
-	form := url.Values{
-		"channel": {channelID},
-		"command": {command},
-		"text":    {text},
-		"disp":    {command},
-	}
-	if threadTS != "" {
-		form.Set("thread_ts", threadTS)
-	}
-	raw, err := c.postForm(ctx, "chat.command", form)
-	if err != nil {
-		return err
-	}
-	return parseOKResponse("chat.command", raw)
 }

@@ -178,6 +178,18 @@ func (db *DB) migrate() error {
 		PRIMARY KEY (workspace_id, channel_id, thread_ts)
 	);
 
+	CREATE TABLE IF NOT EXISTS marks (
+		workspace_id TEXT NOT NULL,
+		letter       TEXT NOT NULL,
+		channel_id   TEXT NOT NULL,
+		message_ts   TEXT NOT NULL DEFAULT '',
+		thread_ts    TEXT NOT NULL DEFAULT '',
+		channel_name TEXT NOT NULL DEFAULT '',
+		author_name  TEXT NOT NULL DEFAULT '',
+		excerpt      TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (workspace_id, letter)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, ts);
 	CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_ts, channel_id);
 	CREATE INDEX IF NOT EXISTS idx_channels_workspace ON channels(workspace_id);
@@ -259,6 +271,25 @@ func (db *DB) migrate() error {
 	}
 	if err := db.addColumnIfMissing("messages", "version",
 		"ALTER TABLE messages ADD COLUMN version TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// External classification is relative to a workspace, whereas profiles
+	// are keyed globally by user ID. Persist the home team so each workspace
+	// derives its own flag. Like status/huddle backfill below, reset versions
+	// once to request full profiles for pre-migration rows. Do not infer a
+	// home team from the old boolean: it may already have been overwritten
+	// by resolution in another workspace.
+	hadHomeTeam, err := db.hasColumn("users", "home_team_id")
+	if err != nil {
+		return err
+	}
+	if !hadHomeTeam {
+		if _, err := db.conn.Exec(`UPDATE users SET version = 0`); err != nil {
+			return fmt.Errorf("resetting user versions for home-team backfill: %w", err)
+		}
+	}
+	if err := db.addColumnIfMissing("users", "home_team_id",
+		"ALTER TABLE users ADD COLUMN home_team_id TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	// Custom status, rendered next to other users' names. Conditional

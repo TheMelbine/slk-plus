@@ -3,6 +3,7 @@
 ## Messaging
 
 - Real-time messages, edits, deletes, reactions, and typing indicators over WebSocket
+- Apps' "working" status: "Atlas is working..." under the channel, and the app's own status text ("Atlas Thinking...") in the open thread it is working on
 - Edit your own messages (`E`) — reuses the compose box with stash/restore for any in-progress draft
 - Delete your own messages (`D`) — centered confirmation overlay with message preview
 - Slack markdown rendering (bold, italic, strikethrough, code, blockquotes, links, mentions)
@@ -81,11 +82,20 @@ See [[Terminal Compatibility|Terminal-Compatibility]] for which protocol your te
   `@here`/`@channel`, user groups and keywords), replies in threads you
   follow, reactions to your messages, and DMs. Open it from the sidebar,
   with `Ctrl+a` (which toggles back to your channel), or with `:activity`.
-- Each item is a card: who, what happened and where (`Mention in #general`,
-  `Reacted in DM`, `Thread in ◆ private`), how long ago, and an unread dot,
-  over the message itself — rendered like the message pane, with emoji,
-  mentions and channel links. Reactions lead with the emoji; DMs are headed
-  by the other person, and your own latest message reads `You: …`
+- Each item is a two-line card led by an avatar (the other person's on a
+  DM). The header has a type glyph — `@` mention, `⚑` thread reply, `✦`
+  reaction, `→` DM, `◷` reminder — coloured while the item is unread, the
+  reaction emoji beside the glyph, then `author · channel` with the channel
+  muted, and a short time (`7m`) on the right. There are no "Mention in" /
+  "Thread in" labels: the glyph says it. Line two is the message itself,
+  rendered like the message pane (emoji, mentions, channel links) with only
+  mentions of you highlighted; in a DM your own latest message reads
+  `You: …`
+- Read cards are dimmed, unread ones keep full colour; a date divider
+  separates older days
+- `U` toggles the selected item read/unread (synced to Slack). Slack
+  reminders show `Open Slack to see this reminder` (the feed carries no
+  reminder text); `Enter` on one marks it read
 - `Enter` opens the item: a thread reply opens the thread in the side panel,
   anything else jumps to the message in its channel
 - `u` toggles unread-only (filtered by Slack, not locally)
@@ -115,6 +125,14 @@ See [[Terminal Compatibility|Terminal-Compatibility]] for which protocol your te
 - Fuzzy channel finder (`Ctrl+t` / `Ctrl+p`) — auto-expands a collapsed section when you open a channel inside it; ranks 1:1 DMs above group DMs when searching by person name
 - Workspace picker (`:ws`) and direct jump (`1`–`9`)
 - All workspaces stay connected in parallel for live unread badges
+
+## Marks & Navigation
+
+- **Vim-style marks** — `M` + a letter (`m` cycles notification levels in this fork) records the selected message; `'` + that letter jumps back to it. A mark captures the channel, the message, and, when set inside a thread, the thread and the reply, so a mark can return you to one message in a 200-reply thread. In the Threads view, a mark records the selected thread.
+- Session vs. persistent, as in vim: lowercase marks (`Ma`–`Mz`) die with the session, uppercase (`MA`–`MZ`) survive a restart. `persist_all` makes lowercase persist too, non-destructively.
+- `''` back-jump — returns you to where you were before the last jump, whether or not it changed channel; press again to toggle back.
+- `:marks` overlay — every mark with its channel and a preview of the message, rendered from a snapshot taken at mark time, so it works offline and immediately after a restart. Click a row (or press `Enter`) to jump to it, `Backspace` deletes a row, and `:delmarks abc` deletes by letter.
+- **Position-aware back/forward** (`Ctrl+h` / `Ctrl+l`) — retraces visited channels and restores the message you were reading when you left each one, rather than dumping you at the newest message.
 
 ## Notifications
 
@@ -175,7 +193,7 @@ See [[Terminal Compatibility|Terminal-Compatibility]] for which protocol your te
 
 - 59 built-in themes (including `ANSI Dark` / `ANSI Light` that inherit your terminal palette)
 - Drop-in custom themes (`~/.config/slk/themes/*.toml`)
-- Live theme switcher (`Ctrl+y`)
+- Live theme switcher (`Ctrl+y`); `Alt+y` / `Alt+Shift+y` cycle to the next / previous theme
 - TOML config for appearance, animations, notifications, and channel sections
 - Deterministic per-user username coloring, opt-in via `colored_usernames`
 

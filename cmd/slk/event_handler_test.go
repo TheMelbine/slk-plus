@@ -13,7 +13,10 @@ import (
 	"github.com/gammons/slk/internal/cache"
 	"github.com/gammons/slk/internal/config"
 	"github.com/gammons/slk/internal/core"
+	slackclient "github.com/gammons/slk/internal/slack"
+	"github.com/gammons/slk/internal/slack/edge"
 	"github.com/gammons/slk/internal/ui"
+	"github.com/gammons/slk/internal/ui/messages/blockkit"
 	"github.com/gammons/slk/internal/ui/sidebar"
 	"github.com/slack-go/slack"
 )
@@ -833,4 +836,174 @@ func TestMuteRefreshMsg(t *testing.T) {
 	if rs.WorkspaceID != "T1" {
 		t.Errorf("inactive: WorkspaceID = %q, want T1", rs.WorkspaceID)
 	}
+}
+
+// capturedMentionAttachmentsJSON: the attachments of Slackbot's "not in
+// this channel" ephemeral, captured from the web client (placeholder IDs).
+const capturedMentionAttachmentsJSON = `[{"callback_id":"consistentephemeralmentions_U0EXAMPLE01_1791541429559219_0",
+ "fallback":"You may want to invite them.","id":1,"actions":[
+ {"id":"1","name":"invite","text":"Add Them","type":"button","value":"invite","style":""},
+ {"id":"2","name":"ignore","text":"Dismiss","type":"button","value":"ignore","style":""},
+ {"id":"3","name":"dont-show-again","text":"Don't Show Again","type":"button","value":"dont-show-again","style":""}]}]`
+
+func ephemeralFixture(t *testing.T) slackclient.EphemeralMessage {
+	t.Helper()
+	var atts []slack.Attachment
+	if err := json.Unmarshal([]byte(capturedMentionAttachmentsJSON), &atts); err != nil {
+		t.Fatal(err)
+	}
+	return slackclient.EphemeralMessage{
+		ChannelID: "C1", UserID: "USLACKBOT", BotID: "B01", Username: "slackbot",
+		TS: "1791541429.559220", Subtype: "bot_message",
+		Text:        "You mentioned <@U0EXAMPLE01>, but they’re not in this private channel.",
+		Attachments: atts,
+		ActionIDs:   [][]string{{"1", "2", "3"}},
+	}
+}
+
+// Slack never returns an ephemeral from history: a cached copy would be
+// a ghost row, and a moved watermark or unread flag would point at a
+// message Slack does not know. It goes to the UI and nowhere else.
+func TestOnEphemeralMessage_DisplaysButTouchesNoDurableState(t *testing.T) {
+	db := newTestDB(t)
+	_ = db.UpsertChannel(cache.Channel{ID: "C1", WorkspaceID: "T1", Name: "general", Type: "channel"})
+	var sent []ui.NewMessageMsg
+	h := &rtmEventHandler{
+		program: sendFunc(func(msg tea.Msg) {
+			if m, ok := msg.(ui.NewMessageMsg); ok {
+				sent = append(sent, m)
+			}
+		}),
+		db:              db,
+		wsCtx:           &WorkspaceContext{},
+		workspaceID:     "T1",
+		currentUserID:   "USELF",
+		isActive:        func() bool { return true },
+		activeChannelID: func() string { return "C1" },
+		channelNames:    map[string]string{},
+		channelTypes:    map[string]string{},
+	}
+
+	h.OnEphemeralMessage(ephemeralFixture(t))
+
+	if _, err := db.GetMessage("C1", "1791541429.559220"); err == nil {
+		t.Error("the ephemeral was cached")
+	}
+	if ts := db.GetChannelLatestSyncedTS("C1"); ts != "" {
+		t.Errorf("latest_synced_ts = %q, want it untouched", ts)
+	}
+	if s, _ := db.GetChannelReadState("C1"); s.HasUnread {
+		t.Error("has_unread set by an ephemeral")
+	}
+	if len(sent) != 1 {
+		t.Fatalf("sent %d NewMessageMsg, want 1", len(sent))
+	}
+	item := sent[0].Message
+	if sent[0].ChannelID != "C1" || !item.Ephemeral || item.TS != "1791541429.559220" {
+		t.Errorf("sent %+v, want an ephemeral item for C1", sent[0])
+	}
+	if item.BotID != "B01" {
+		t.Errorf("BotID = %q, want B01", item.BotID)
+	}
+	if len(item.LegacyAttachments) != 1 || len(item.LegacyAttachments[0].Actions) != 3 {
+		t.Fatalf("legacy attachments = %+v", item.LegacyAttachments)
+	}
+	if got := item.LegacyAttachments[0].Actions[1]; got.ID != "2" || got.Name != "ignore" {
+		t.Errorf("Actions[1] = %+v, want id 2 from the raw frame", got)
+	}
+}
+
+// A bot's working indicator reaches the UI tagged with the workspace
+// it came from, the empty status that clears it included.
+func TestOnAssistantStatus_SendsBotStatus(t *testing.T) {
+	var sent []tea.Msg
+	h := &rtmEventHandler{
+		program:     sendFunc(func(msg tea.Msg) { sent = append(sent, msg) }),
+		workspaceID: "T1",
+	}
+	h.OnAssistantStatus(slackclient.AssistantStatus{ChannelID: "C1", ThreadTS: "100.1", BotUserID: "UBOT", Status: "Thinking..."})
+	h.OnAssistantStatus(slackclient.AssistantStatus{ChannelID: "C1", ThreadTS: "100.1", BotUserID: "UBOT"})
+
+	want := []tea.Msg{
+		ui.BotStatusMsg{WorkspaceID: "T1", ChannelID: "C1", ThreadTS: "100.1", BotUserID: "UBOT", Status: "Thinking..."},
+		ui.BotStatusMsg{WorkspaceID: "T1", ChannelID: "C1", ThreadTS: "100.1", BotUserID: "UBOT"},
+	}
+	if len(sent) != len(want) {
+		t.Fatalf("sent %d messages, want %d: %+v", len(sent), len(want), sent)
+	}
+	for i := range want {
+		if sent[i] != want[i] {
+			t.Errorf("sent[%d] = %#v, want %#v", i, sent[i], want[i])
+		}
+	}
+}
+
+// An app slk has never seen must not stay "U… is working...": its
+// status asks for its name, which reaches the UI as UserResolvedMsg.
+func TestOnAssistantStatus_ResolvesAnUnknownApp(t *testing.T) {
+	db := newTestDB(t)
+	watch := newResolvedWatch(1, func(m ui.UserResolvedMsg) bool { return m.UserID == "UBOT" })
+	batcher := &fakeBatcher{res: []edge.User{edgeUserRecord("UBOT", "atlas", "Atlas", "", "T1", 1, true)}}
+	wctx := &WorkspaceContext{TeamID: "T1", UserNames: newUserNameStore(nil)}
+	wctx.UserResolver = newUserResolver("T1", nil, db, nil, watch.send, batcher, nil)
+	wctx.UserResolver.names = wctx.UserNames
+	h := &rtmEventHandler{workspaceID: "T1", wsCtx: wctx, db: db, userNames: wctx.UserNames}
+
+	h.OnAssistantStatus(slackclient.AssistantStatus{ChannelID: "C1", ThreadTS: "100.1", BotUserID: "UBOT", Status: "Thinking..."})
+
+	<-watch.done // no timeout: a resolver never asked hangs, and go test names the test
+	for _, m := range watch.messages() {
+		if u, ok := m.(ui.UserResolvedMsg); ok && u.UserID == "UBOT" && u.DisplayName != "Atlas" {
+			t.Errorf("UBOT resolved as %q, want Atlas", u.DisplayName)
+		}
+	}
+}
+
+func TestOnAssistantStatus_KnownAppIsNotLookedUp(t *testing.T) {
+	db := newTestDB(t)
+	batcher := &fakeBatcher{}
+	wctx := &WorkspaceContext{TeamID: "T1", UserNames: newUserNameStore(map[string]string{"UBOT": "Atlas"})}
+	wctx.UserResolver = newUserResolver("T1", nil, db, nil, nil, batcher, nil)
+	h := &rtmEventHandler{workspaceID: "T1", wsCtx: wctx, db: db, userNames: wctx.UserNames}
+
+	h.OnAssistantStatus(slackclient.AssistantStatus{ChannelID: "C1", ThreadTS: "100.1", BotUserID: "UBOT", Status: "Thinking..."})
+
+	r := wctx.UserResolver
+	r.pendingMu.Lock()
+	queued, armed := len(r.pending), r.flushTimer != nil
+	r.pendingMu.Unlock()
+	if queued != 0 || armed {
+		t.Errorf("a named app queued %d lookup(s) (flush armed: %v), want none", queued, armed)
+	}
+}
+
+func TestOnEphemeralMessage_InactiveWorkspaceDrops(t *testing.T) {
+	sent := 0
+	h := &rtmEventHandler{
+		program:  sendFunc(func(tea.Msg) { sent++ }),
+		wsCtx:    &WorkspaceContext{},
+		isActive: func() bool { return false },
+	}
+	h.OnEphemeralMessage(ephemeralFixture(t))
+	if sent != 0 {
+		t.Errorf("sent %d messages for an inactive workspace, want 0", sent)
+	}
+}
+
+// Ids are positional and best-effort: a frame with fewer or more ids
+// than parsed actions must not panic or shift ids onto the wrong button.
+func TestApplyActionIDs_Misaligned(t *testing.T) {
+	atts := []blockkit.LegacyAttachment{
+		{Actions: []blockkit.LegacyAction{{Name: "a"}, {Name: "b"}}},
+		{Actions: []blockkit.LegacyAction{{Name: "c"}}},
+	}
+	applyActionIDs(atts, [][]string{{"1"}})
+	if atts[0].Actions[0].ID != "1" || atts[0].Actions[1].ID != "" || atts[1].Actions[0].ID != "" {
+		t.Errorf("short ids: %+v", atts)
+	}
+	applyActionIDs(atts, [][]string{{"1", "2", "3"}, {"4", "5"}, {"6"}})
+	if atts[0].Actions[1].ID != "2" || atts[1].Actions[0].ID != "4" {
+		t.Errorf("long ids: %+v", atts)
+	}
+	applyActionIDs(nil, [][]string{{"1"}}) // must not panic
 }

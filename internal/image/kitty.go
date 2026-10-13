@@ -123,8 +123,9 @@ type KittyRenderer struct {
 	//
 	// Why this exists: Registry.Lookup keeps returning fresh=true for
 	// any image whose OnFlush has never fired -- and OnFlush only fires
-	// for messages whose viewEntry currently sits inside the visible
-	// viewport (see internal/ui/messages/model.go:2748). For an
+	// for messages whose cache entry currently sits inside the visible
+	// window (see messages.Model's View, which runs each visible
+	// entry's EntryPayload.Flushes). For an
 	// image-heavy channel with 21 images but only ~5 visible at a
 	// time, 16 of the 21 images would re-pay bilinear-resize +
 	// PNG-encode + base64 on EVERY buildCache because their
@@ -270,7 +271,7 @@ func (k *KittyRenderer) RenderKey(key string, target image.Point) Render {
 		cellsRows := target.Y
 		reg := k.registry
 		// fired guards against per-closure double-emission (e.g. the
-		// same viewEntry being flushed twice in one frame). The
+		// same cache entry being flushed twice in one frame). The
 		// registry's MarkUploaded guards against double-emission
 		// across DIFFERENT closures for the same (key, target) —
 		// without that, a cache rebuild that discards an unfired
@@ -308,18 +309,21 @@ func (k *KittyRenderer) RenderKey(key string, target image.Point) Render {
 //
 // Reference: https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders
 //
+// The upload is preceded by `a=d,d=I` for the same id, which drops every
+// existing placement of it. Ids restart at 2 each run, so a terminal can
+// still hold placements an earlier slk process made under this id at a
+// different c×r. Ghostty (through 1.3.x) keeps them across a re-transmit
+// and sizes placeholder cells from whichever virtual placement it finds
+// first, which fitted the image preview and avatars into a 2x1 emoji's
+// grid. The fixed placement id `p=1` makes a later re-transmit replace
+// that placement instead of adding a second one.
+//
 // The whole upload must be emitted in one Write. Continuation chunks
 // carry no image id, while KittyOutput serializes individual Write
 // calls rather than complete uploads.
 func emitKittyUpload(w io.Writer, id uint32, payload string, cols, rows int) error {
 	const chunk = 4096
 	var sb strings.Builder
-	// Drop whatever the terminal still holds under this id first. IDs
-	// restart from 1 every run, and Ghostty keeps an old virtual
-	// placement when an id is re-transmitted: the new picture then draws
-	// at the stale placement's size (a 49x20 attachment squeezed into a
-	// previous run's 2x1 avatar). The fixed placement id below makes a
-	// re-transmit replace the placement instead of adding a second one.
 	sb.WriteString(forTerminal(fmt.Sprintf("\x1b_Ga=d,d=I,i=%d,q=2\x1b\\", id)))
 	for i := 0; i < len(payload); i += chunk {
 		end := i + chunk

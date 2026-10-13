@@ -102,3 +102,50 @@ func TestHandleKey_RussianLayoutScrollsHelp(t *testing.T) {
 		t.Fatalf("searching = %v selected = %d, want a Cyrillic query", a.help.IsSearching(), a.help.Selected())
 	}
 }
+
+// The marks overlay has no text input: on a Russian layout the physical
+// A key (ф) jumps to mark a, as the M chord recorded it.
+func TestHandleKey_RussianLayoutJumpsFromMarksOverlay(t *testing.T) {
+	app := jumpMarkTestApp(t)
+	seedMark(t, app, "a", Location{TeamID: "T1", ChannelID: "C2", MessageTS: "10.0"})
+	app.openMarksOverlay()
+	app.SetMode(ModeMarks)
+
+	_, cmd := app.Update(tea.KeyPressMsg{Code: 'ф', Text: "ф"})
+	if cmd == nil {
+		t.Fatal("ф in the marks overlay must jump to mark a")
+	}
+	cs, ok := cmd().(ChannelSelectedMsg)
+	if !ok || cs.ID != "C2" {
+		t.Fatalf("ф jumped to %T %+v, want C2", cs, cs)
+	}
+	if app.mode != ModeNormal || app.marksOverlay.IsVisible() {
+		t.Fatal("the jump must close the overlay")
+	}
+}
+
+// э is the ' key on a Russian layout: pressed twice it takes the
+// back-jump, the second press reaching the open overlay.
+func TestHandleKey_RussianLayoutBackJumpFromMarksOverlay(t *testing.T) {
+	app := jumpMarkTestApp(t)
+	seedMark(t, app, "a", Location{TeamID: "T1", ChannelID: "C2", MessageTS: "10.0"})
+	app.Update(ChannelSelectedMsg{ID: "C1", Name: "one", Type: "channel"})
+	app.messagepane.SelectByTS("1.0")
+	driveJump(app, pressJumpChord(app, 'a'))
+	if app.activeChannelID != "C2" {
+		t.Fatalf("setup: jump landed in %q, want C2", app.activeChannelID)
+	}
+
+	app.Update(tea.KeyPressMsg{Code: 'э', Text: "э"})
+	if app.mode != ModeMarks {
+		t.Fatalf("э must open the marks overlay, mode=%v", app.mode)
+	}
+	_, cmd := app.Update(tea.KeyPressMsg{Code: 'э', Text: "э"})
+	if app.mode != ModeNormal || app.marksOverlay.IsVisible() {
+		t.Fatal("the back-jump must close the overlay")
+	}
+	driveJump(app, cmd)
+	if app.activeChannelID != "C1" {
+		t.Fatalf("back-jump landed in %q, want C1", app.activeChannelID)
+	}
+}

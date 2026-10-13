@@ -270,3 +270,13 @@ func TestDemoProfiles_ReturnCast(t *testing.T) {
 		t.Error("Profile(unknown team) = nil error, want an error")
 	}
 }
+
+// U in the demo Activity view must be confirmed, or the item stays in
+// flight and later presses send nothing.
+func TestActivitySetReadConfirms(t *testing.T) {
+	s := testDemo(t).services()
+	msg, ok := s.activity.SetRead(ids.TeamID(teamLumen), core.ActivityItem{Key: "k1"}, true).(ui.ActivityReadSetMsg)
+	if !ok || msg.TeamID != teamLumen || msg.Key != "k1" || !msg.Read || msg.Err != nil {
+		t.Fatalf("SetRead = %#v, want a confirmed ActivityReadSetMsg", msg)
+	}
+}

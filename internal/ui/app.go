@@ -16,6 +16,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/gammons/slk/internal/bubbles/confirmprompt"
 	"github.com/gammons/slk/internal/core"
 	"github.com/gammons/slk/internal/debuglog"
 	"github.com/gammons/slk/internal/emoji"
@@ -25,13 +26,12 @@ import (
 	"github.com/gammons/slk/internal/ui/activityview"
 	"github.com/gammons/slk/internal/ui/channelfinder"
 	"github.com/gammons/slk/internal/ui/channelpicker"
-	"github.com/gammons/slk/internal/ui/commandpicker"
 	"github.com/gammons/slk/internal/ui/compose"
-	"github.com/gammons/slk/internal/ui/confirmprompt"
 	"github.com/gammons/slk/internal/ui/emojipicker"
 	"github.com/gammons/slk/internal/ui/help"
 	"github.com/gammons/slk/internal/ui/imgrender"
 	"github.com/gammons/slk/internal/ui/linkpicker"
+	"github.com/gammons/slk/internal/ui/marks"
 	"github.com/gammons/slk/internal/ui/mentionpicker"
 	"github.com/gammons/slk/internal/ui/messages"
 	"github.com/gammons/slk/internal/ui/newmessagepicker"
@@ -188,6 +188,25 @@ type App struct {
 	// also remaps ASCII punctuation (`.` sits on the US `/` key).
 	nonLatinLayout bool
 
+	// pendingMark is true between an M press and its mark letter; the
+	// next key names the mark to set (handleMarkChord, set_mark.go).
+	// Mirrors pendingWinCmd: any non-letter — Esc included — cancels
+	// silently, matching vim.
+	pendingMark bool
+
+	// pendingJumpMark is true between a ' (or `) press and its mark
+	// letter; the next key names the mark to jump to (handleJumpChord,
+	// jump_mark.go). Mirrors pendingMark, including the SetMode disarm.
+	pendingJumpMark bool
+
+	// backJump is the vim-style '' back-jump slot: the single most
+	// recently departed location, written immediately before a mark
+	// jump navigates (and before the back-jump itself, so repeating it
+	// toggles between two locations). nil = nothing recorded yet. NOT
+	// per-workspace — cleared on workspace switch, because it only
+	// ever holds the latest departure.
+	backJump *Location
+
 	// layout owns the per-frame layout geometry (horizontal bands for
 	// mouse hit-testing + per-pane content heights for pageSize). See
 	// internal/ui/panellayout.go.
@@ -257,6 +276,11 @@ type App struct {
 	// for the Activity view. Defaulted to a no-op adapter in NewApp so
 	// call sites can dispatch without nil-checks.
 	activity core.ActivityService
+
+	// activityReads holds the Activity items with a read-state request
+	// to Slack under way, keyed by activityReadKey. Update goroutine
+	// only.
+	activityReads map[string]*activityRead
 
 	threadsDirtyDebounce time.Duration
 
@@ -355,6 +379,13 @@ type App struct {
 	// a no-longer-viewed channel must still clear its own flag).
 	fetchingOlder map[string]bool
 
+	// channelFetchInFlight names the channel whose MessagesLoadedMsg
+	// is still expected after a channel switch fired a fetch (cache
+	// tiers 2 and 3). An in-place jump into that channel must not
+	// complete authoritatively against the cached buffer: the load
+	// replaces it and would reset the selection to the newest message.
+	channelFetchInFlight string
+
 	// Cached user-id -> display-name map (mirror of what SetUserNames
 	// last received). Used by openSelectedThreadCmd to populate the
 	// thread panel parent's UserName without round-tripping through any
@@ -428,7 +459,19 @@ type App struct {
 	// Reaction picker
 	reactionPicker *reactionpicker.Model
 	reactionsView  *reactionsview.Model
-	confirmPrompt  *confirmprompt.Model
+	confirmPrompt  confirmprompt.Model
+	// shownPrompt is the ephemeral message whose buttons the confirm
+	// prompt is showing; nil when it shows anything else, or nothing.
+	shownPrompt *actionPromptRef
+	// shownPromptInsert records that shownPrompt opened over insert mode
+	// (shownPromptThread: over the thread composer), so closing it puts
+	// the user back to typing.
+	shownPromptInsert, shownPromptThread bool
+	// actionQueue holds ephemerals with buttons waiting for the action
+	// dialog, oldest first; promptToasted records which have shown the
+	// "press b" toast, so it appears once per message.
+	actionQueue   []actionPromptRef
+	promptToasted map[string]bool
 	// userProfile is the K-opened read-only "who is this person?"
 	// modal (see internal/ui/userprofile). profileSvc fetches the
 	// full profile; defaulted to noopProfileService in NewApp so the
@@ -446,22 +489,31 @@ type App struct {
 	// internal/ui/services.go. Defaulted to a no-op adapter in NewApp
 	// so call sites can dispatch without nil-checks.
 	reactions     core.ReactionService
+	interactions  core.InteractionService
+	commandSvc    core.CommandService
 	currentUserID string
 
 	// editing tracks in-progress message edit state. See
 	// internal/ui/edit.go.
 	editing *editController
 
-	// newMessageInFlightID is the monotonic counter for in-flight
-	// OpenConversation requests dispatched from the new-message
-	// picker. 0 means no submit is in flight. The reducer drops late
-	// results whose RequestID doesn't match.
+	// newMessageInFlightID is the ID of the in-flight OpenConversation
+	// request (new-message picker or /msg); 0 means none. The reducer
+	// drops late results whose RequestID doesn't match. IDs come from
+	// newMessageSeq, which never resets, so a late result of an old
+	// request can never match a newer one.
 	newMessageInFlightID uint64
+	newMessageSeq        uint64
 	// newMessageCancelled is set to true when the user Escs the
 	// modal while a submit is in flight. A subsequent
 	// NewMessageOpenedMsg with the matching RequestID is dropped
 	// rather than switching channels behind the user's back.
 	newMessageCancelled bool
+	// newMessagePrefill is what /msg asked of the in-flight open: the
+	// text to offer as the opened conversation's draft and where /msg
+	// was typed; zero for the new-message picker. Consumed by
+	// NewMessageOpenedMsg, given back and cleared by NewMessageFailedMsg.
+	newMessagePrefill msgPrefill
 
 	// Workspace switching
 	workspaceSvc   core.WorkspaceService
@@ -479,15 +531,28 @@ type App struct {
 	// from WorkspaceReadyMsg / WorkspaceSwitchedMsg. Read by the link
 	// router to match permalink hosts against the active workspace.
 	workspaceDomains map[string]string
-	// slashCommands holds each workspace's slash commands; the active
-	// workspace's set feeds both composers' "/" pickers.
-	slashCommands map[string][]commandpicker.Command
 
 	// pendingLinkNav tracks an in-flight permalink navigation: the
 	// channel was (or is being) opened and the message-select /
 	// thread-open completes when that channel's messages land. See
-	// reducer_links.go.
+	// reducer_links.go. Every in-app jump (permalinks, marks, history
+	// walks) records its target here via applyLocation.
 	pendingLinkNav *pendingLinkNav
+
+	// marks owns the vim-style mark storage: an in-memory per-workspace
+	// tier for lowercase marks plus the SQLite `marks` table, merged
+	// behind one set of accessors (see internal/ui/marks.go).
+	marks *marksStore
+
+	// marksOverlay is the marks list widget (internal/ui/marks/): one
+	// row per mark, rendered from the stored preview snapshot, opened
+	// by the ' chord and the :marks command.
+	marksOverlay marks.Model
+
+	// showJumpOverlay is the [marks] show_jump_overlay option: whether
+	// beginning a jump (' ) shows the marks list. Defaults to on; the
+	// option does not affect the :marks command, which always shows it.
+	showJumpOverlay bool
 
 	// search is the active in-channel search (nil = none).
 	// searchInput is the prompt buffer while in ModeSearch.
@@ -512,6 +577,15 @@ type App struct {
 	// settings persists the theme choice and sidebar width. Nil until wired.
 	settings       core.SettingsService
 	themeOverrides core.Theme
+	// pendingTheme is the theme a cycle (alt+y / alt+shift+y) applied
+	// but has not saved yet, with its workspace. themeSaveGen counts
+	// cycle presses, so a save tick from an earlier press can tell that
+	// it is stale. themeToastSeq is the status-bar ToastSeq of the last
+	// "Theme: …" toast, so applyTheme can tell whether it still shows.
+	// See theme.go.
+	pendingTheme  pendingThemeSave
+	themeSaveGen  int
+	themeToastSeq uint64
 
 	// presence owns per-workspace presence/DND cache, the DND-tick
 	// guard, and the custom-snooze numeric input buffer. See
@@ -826,6 +900,8 @@ func NewApp() *App {
 		preview:               newImagePreviewController(),
 		layout:                newPanelLayout(),
 		reactions:             noopReactionService,
+		interactions:          noopInteractionService,
+		commandSvc:            noopCommandService,
 		threads:               noopThreadService,
 		activity:              noopActivityService,
 		messageSvc:            noopMessageService,
@@ -833,10 +909,12 @@ func NewApp() *App {
 		searchSvc:             noopSearchService,
 		lastChannelByTeam:     map[string]string{},
 		workspaceDomains:      map[string]string{},
-		slashCommands:         map[string][]commandpicker.Command{},
 		desktop:               noopDesktopService,
 		editor:                noopEditorService,
 		navHistory:            newNavHistoryStore(),
+		marks:                 newMarksStore(),
+		marksOverlay:          marks.New(),
+		showJumpOverlay:       true,
 		clipboardWrite:        defaultClipboardWriter,
 		userProfile:           userprofile.New(),
 		profileSvc:            noopProfileService,
@@ -847,7 +925,7 @@ func NewApp() *App {
 	// empty at construction — main.go's Set* forwarders run later and
 	// reach the root model through the messagepane pointer directly.
 	rootModel := messages.New(nil, "")
-	app.winModels = map[wintree.LeafID]*messages.Model{rootWin: &rootModel}
+	app.winModels = map[wintree.LeafID]*messages.Model{rootWin: rootModel}
 	app.messagepane = app.winModels[rootWin]
 	app.editing = newEditController()
 	// typing tracker is referenced by typingOut so it must exist first;
@@ -980,12 +1058,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		reduceActivity,
 		reduceFocus,
 		reduceSend,
+		reduceActionPrompt,
+		reduceSlashCommand,
 		reduceChannels,
 		reduceLinks,
-		reduceSlash,
 		reduceFiles,
 		reduceSearch,
 		reduceWorkspace,
+		reduceTheme,
 		reduceNewMessagePicker,
 		reduceUserProfile,
 		reduceIO,
@@ -1043,6 +1123,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if changed {
 			a.forceSixelRepaint = true
 		}
+		a.confirmPrompt.SetWidth(msg.Width)
+		a.confirmPrompt.SetHeight(msg.Height)
 		return a, nil
 
 	case scrollFlushMsg:
@@ -1119,17 +1201,35 @@ func (a *App) navigateForward() tea.Cmd {
 	return a.walkNavCmd(+1)
 }
 
-// walkNavCmd is the shared wrapper that turns navHistoryStore.Walk's
-// pure result into the ChannelSelectedMsg{FromHistory: true} tea.Cmd
-// the App emits. step must be -1 or +1.
+// walkNavCmd is the shared wrapper for a history walk. A walk is also
+// a departure, so the position being left is folded into the current
+// entry first (UpdateCurrent) — this cannot wait for the
+// ChannelSelectedMsg arm, because Walk moves the cursor to the
+// destination before the message is reduced, and UpdateCurrent's
+// channel guard would then no-op against the destination entry. The
+// walked Location then goes through the shared applyLocation applier
+// with FromHistory: true, so the walk does not grow the stack. step
+// must be -1 or +1.
 func (a *App) walkNavCmd(step int) tea.Cmd {
-	id, name, ctype, ok := a.navHistory.Walk(a.activeTeamID, step, a.channels.Lookup)
+	if a.compose.Uploading() || a.threadCompose.Uploading() {
+		// Refused before Walk moves the cursor, so a refused walk
+		// does not skip an entry.
+		return toastWithClear(a, "Upload in progress", 2*time.Second)
+	}
+	a.navHistory.UpdateCurrent(a.activeTeamID, a.currentPosition())
+
+	loc, ok := a.navHistory.Walk(a.activeTeamID, step, a.channels.Lookup)
 	if !ok {
 		return nil
 	}
-	return func() tea.Msg {
-		return ChannelSelectedMsg{ID: id, Name: name, Type: ctype, FromHistory: true}
+	cmd, ok := a.applyLocation(loc, true)
+	if !ok {
+		// The channel resolved during Walk but no longer does here (a
+		// workspace refresh raced the walk): nothing further to do;
+		// Walk already removed the entry.
+		return nil
 	}
+	return cmd
 }
 
 // handleNormalMode moved to mode_normal.go (Phase 5k).
@@ -1166,48 +1266,31 @@ func (a *App) updateReactionOnMessage(channelID, messageTS, emojiName, userID st
 	a.threadPanel.UpdateReaction(messageTS, emojiName, userID, remove)
 }
 
-func (a *App) handleReactionNav(msg tea.KeyMsg) tea.Cmd {
+// handleReactionNav routes a key while reaction navigation is active on
+// pane, whose messages belong to channelID.
+func (a *App) handleReactionNav(p contentPane, channelID string, msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key.Matches(msg, a.keys.Left):
-		a.messagepane.ReactionNavLeft()
+		p.ReactionNavLeft()
 	case key.Matches(msg, a.keys.Right):
-		a.messagepane.ReactionNavRight()
+		p.ReactionNavRight()
 	case key.Matches(msg, a.keys.Enter):
-		emojiName, isPlus := a.messagepane.SelectedReaction()
+		emojiName, isPlus := p.SelectedReaction()
 		if isPlus {
-			return a.openPickerFromMessage()
+			return a.openReactionPicker(p, channelID)
 		}
-		return a.toggleReactionOnSelectedMessage(emojiName)
+		return a.toggleReactionOnSelected(p, channelID, emojiName)
 	case key.Matches(msg, a.keys.Reaction):
-		return a.openPickerFromMessage()
+		return a.openReactionPicker(p, channelID)
 	case key.Matches(msg, a.keys.Escape):
-		a.messagepane.ExitReactionNav()
+		p.ExitReactionNav()
 	}
 	return nil
 }
 
-func (a *App) handleThreadReactionNav(msg tea.KeyMsg) tea.Cmd {
-	switch {
-	case key.Matches(msg, a.keys.Left):
-		a.threadPanel.ReactionNavLeft()
-	case key.Matches(msg, a.keys.Right):
-		a.threadPanel.ReactionNavRight()
-	case key.Matches(msg, a.keys.Enter):
-		emojiName, isPlus := a.threadPanel.SelectedReaction()
-		if isPlus {
-			return a.openPickerFromThread()
-		}
-		return a.toggleReactionOnSelectedThread(emojiName)
-	case key.Matches(msg, a.keys.Reaction):
-		return a.openPickerFromThread()
-	case key.Matches(msg, a.keys.Escape):
-		a.threadPanel.ExitReactionNav()
-	}
-	return nil
-}
-
-func (a *App) openPickerFromMessage() tea.Cmd {
-	msg, ok := a.messagepane.SelectedMessage()
+// openReactionPicker opens the emoji picker for pane's selected message.
+func (a *App) openReactionPicker(p contentPane, channelID string) tea.Cmd {
+	msg, ok := p.SelectedMessage()
 	if !ok {
 		return nil
 	}
@@ -1217,27 +1300,9 @@ func (a *App) openPickerFromMessage() tea.Cmd {
 			existing = append(existing, r.Emoji)
 		}
 	}
-	a.messagepane.ExitReactionNav()
+	p.ExitReactionNav()
 	a.reactionPicker.SetFrecentEmoji(a.reactions.LoadFrecent(10))
-	a.reactionPicker.Open(a.activeChannelID, msg.TS, existing)
-	a.SetMode(ModeReactionPicker)
-	return nil
-}
-
-func (a *App) openPickerFromThread() tea.Cmd {
-	reply := a.threadPanel.SelectedReply()
-	if reply == nil {
-		return nil
-	}
-	var existing []string
-	for _, r := range reply.Reactions {
-		if r.HasReacted {
-			existing = append(existing, r.Emoji)
-		}
-	}
-	a.threadPanel.ExitReactionNav()
-	a.reactionPicker.SetFrecentEmoji(a.reactions.LoadFrecent(10))
-	a.reactionPicker.Open(a.threadPanel.ChannelID(), reply.TS, existing)
+	a.reactionPicker.Open(channelID, msg.TS, existing)
 	a.SetMode(ModeReactionPicker)
 	return nil
 }
@@ -1246,25 +1311,16 @@ func (a *App) openPickerFromThread() tea.Cmd {
 // message (main pane) or selected reply (thread pane). It is a no-op when
 // nothing is selected or the target has no reactions.
 func (a *App) openReactionsView() tea.Cmd {
-	var reactions []messages.ReactionItem
-	switch a.focusedPanel {
-	case PanelMessages:
-		msg, ok := a.messagepane.SelectedMessage()
-		if !ok {
-			return nil
-		}
-		reactions = msg.Reactions
-		a.messagepane.ExitReactionNav()
-	case PanelThread:
-		reply := a.threadPanel.SelectedReply()
-		if reply == nil {
-			return nil
-		}
-		reactions = reply.Reactions
-		a.threadPanel.ExitReactionNav()
-	default:
+	p, _, ok := a.focusedContentPane()
+	if !ok {
 		return nil
 	}
+	msg, ok := p.SelectedMessage()
+	if !ok {
+		return nil
+	}
+	reactions := msg.Reactions
+	p.ExitReactionNav()
 	if len(reactions) == 0 {
 		return nil
 	}
@@ -1273,38 +1329,23 @@ func (a *App) openReactionsView() tea.Cmd {
 	return nil
 }
 
+// noProfileToast is the toast openUserProfile shows when it opens
+// nothing.
+const noProfileToast = "No profile for this message"
+
 // openUserProfile opens the read-only "who is this person?" modal for
 // the selected message's author (main pane) or selected reply's author
 // (thread pane), like openReactionsView. It rejects no selection, an
 // empty UserID, and a UserID starting with "B" (cmd/slk/history.go's
-// bot-ID substitute for a message with no human author) with a toast
-// and opens nothing. On success it seeds the modal from the App's own
-// cached identity, switches to ModeUserProfile, and returns a tea.Cmd
-// that fetches the full profile under a 10s timeout.
+// bot-ID substitute for a message with no human author): it opens
+// nothing, shows noProfileToast, and returns that toast's clear tick.
+// On success it seeds the modal from the App's own cached identity,
+// switches to ModeUserProfile, and returns a tea.Cmd that fetches the
+// full profile under a 10s timeout.
 func (a *App) openUserProfile() tea.Cmd {
-	var userID string
-	switch a.focusedPanel {
-	case PanelMessages:
-		msg, ok := a.messagepane.SelectedMessage()
-		if !ok {
-			a.statusbar.SetToast("No profile for this message")
-			return nil
-		}
-		userID = msg.UserID
-	case PanelThread:
-		reply := a.threadPanel.SelectedReply()
-		if reply == nil {
-			a.statusbar.SetToast("No profile for this message")
-			return nil
-		}
-		userID = reply.UserID
-	default:
-		a.statusbar.SetToast("No profile for this message")
-		return nil
-	}
-	if userID == "" || strings.HasPrefix(userID, "B") {
-		a.statusbar.SetToast("No profile for this message")
-		return nil
+	_, _, _, userID, _, ok := a.selectedMessageContext()
+	if !ok || userID == "" || strings.HasPrefix(userID, "B") {
+		return toastWithClear(a, noProfileToast, 2*time.Second)
 	}
 
 	teamID := a.activeTeamID
@@ -1343,69 +1384,22 @@ func (a *App) buildReactionGroups(reactions []messages.ReactionItem) []reactions
 	return groups
 }
 
-func (a *App) toggleReactionOnSelectedMessage(emojiName string) tea.Cmd {
-	msg, ok := a.messagepane.SelectedMessage()
+// toggleReactionOnSelected toggles the current user's emojiName reaction
+// on pane's selected message.
+func (a *App) toggleReactionOnSelected(p contentPane, channelID, emojiName string) tea.Cmd {
+	msg, ok := p.SelectedMessage()
 	if !ok {
 		return nil
 	}
-	remove := false
-	for _, r := range msg.Reactions {
-		if r.Emoji == emojiName && r.HasReacted {
-			remove = true
-			break
-		}
-	}
-	a.updateReactionOnMessage(a.activeChannelID, msg.TS, emojiName, a.currentUserID, remove)
-	channelID := ids.ChannelID(a.activeChannelID)
-	ts := ids.MessageTS(msg.TS)
-	sent := ReactionSentMsg{ChannelID: a.activeChannelID, MessageTS: msg.TS, Emoji: emojiName, UserID: a.currentUserID, Remove: remove}
-	if remove {
-		return func() tea.Msg {
-			sent.Err = a.reactions.Remove(channelID, ts, emojiName)
-			return sent
-		}
-	}
-	return func() tea.Msg {
-		sent.Err = a.reactions.Add(channelID, ts, emojiName)
-		return sent
-	}
-}
-
-func (a *App) toggleReactionOnSelectedThread(emojiName string) tea.Cmd {
-	reply := a.threadPanel.SelectedReply()
-	if reply == nil {
-		return nil
-	}
-	remove := false
-	for _, r := range reply.Reactions {
-		if r.Emoji == emojiName && r.HasReacted {
-			remove = true
-			break
-		}
-	}
-	threadChannelID := a.threadPanel.ChannelID()
-	a.updateReactionOnMessage(threadChannelID, reply.TS, emojiName, a.currentUserID, remove)
-	channelID := ids.ChannelID(threadChannelID)
-	ts := ids.MessageTS(reply.TS)
-	sent := ReactionSentMsg{ChannelID: threadChannelID, MessageTS: reply.TS, Emoji: emojiName, UserID: a.currentUserID, Remove: remove}
-	if remove {
-		return func() tea.Msg {
-			sent.Err = a.reactions.Remove(channelID, ts, emojiName)
-			return sent
-		}
-	}
-	return func() tea.Msg {
-		sent.Err = a.reactions.Add(channelID, ts, emojiName)
-		return sent
-	}
+	return a.toggleReactionOnMessageItem(channelID, msg, emojiName)
 }
 
 // toggleReactionOnMessageItem toggles the current user's reaction on
 // an arbitrary message (not necessarily the selected one). Used by the
 // click-on-pill path, which identifies the target message by its
-// rendered hit rect rather than by selection. Behavior matches
-// toggleReactionOnSelectedMessage: optimistic in-memory update + an
-// async tea.Cmd that issues the Slack add/remove call.
+// rendered hit rect rather than by selection, and by
+// toggleReactionOnSelected: optimistic in-memory update + an async
+// tea.Cmd that issues the Slack add/remove call.
 func (a *App) toggleReactionOnMessageItem(channelIDStr string, msg messages.MessageItem, emojiName string) tea.Cmd {
 	remove := false
 	for _, r := range msg.Reactions {
@@ -1433,21 +1427,12 @@ func (a *App) toggleReactionOnMessageItem(channelIDStr string, msg messages.Mess
 // copyMessageOfSelected copies the text of the currently-selected message or
 // thread reply to the system clipboard and emits a status-bar toast.
 func (a *App) copyMessageOfSelected() tea.Cmd {
-	var msg messages.MessageItem
-	switch a.focusedPanel {
-	case PanelMessages:
-		m, ok := a.messagepane.SelectedMessage()
-		if !ok {
-			return nil
-		}
-		msg = m
-	case PanelThread:
-		reply := a.threadPanel.SelectedReply()
-		if reply == nil {
-			return nil
-		}
-		msg = *reply
-	default:
+	p, _, ok := a.focusedContentPane()
+	if !ok {
+		return nil
+	}
+	msg, ok := p.SelectedMessage()
+	if !ok {
 		return nil
 	}
 
@@ -1466,25 +1451,15 @@ func (a *App) copyMessageOfSelected() tea.Cmd {
 // reply, calls the permalink fetcher, and returns a tea.Cmd that writes the
 // URL to the clipboard and emits a status-bar toast.
 func (a *App) copyPermalinkOfSelected() tea.Cmd {
-	var channelID, ts string
-	switch a.focusedPanel {
-	case PanelMessages:
-		msg, ok := a.messagepane.SelectedMessage()
-		if !ok {
-			return nil
-		}
-		channelID = a.activeChannelID
-		ts = msg.TS
-	case PanelThread:
-		reply := a.threadPanel.SelectedReply()
-		if reply == nil {
-			return nil
-		}
-		channelID = a.threadPanel.ChannelID()
-		ts = reply.TS
-	default:
+	p, channelID, ok := a.focusedContentPane()
+	if !ok {
 		return nil
 	}
+	msg, ok := p.SelectedMessage()
+	if !ok {
+		return nil
+	}
+	ts := msg.TS
 	if channelID == "" || ts == "" {
 		return nil
 	}
@@ -1520,24 +1495,15 @@ func (a *App) copyPermalinkOfSelected() tea.Cmd {
 // open the link picker modal. All opens converge on OpenLinkMsg,
 // the single routing point in reducer_links.go.
 func (a *App) openLinksOfSelected() tea.Cmd {
-	var text string
-	switch a.focusedPanel {
-	case PanelMessages:
-		msg, ok := a.messagepane.SelectedMessage()
-		if !ok {
-			return nil
-		}
-		text = msg.Text
-	case PanelThread:
-		reply := a.threadPanel.SelectedReply()
-		if reply == nil {
-			return nil
-		}
-		text = reply.Text
-	default:
+	p, _, ok := a.focusedContentPane()
+	if !ok {
 		return nil
 	}
-	links := messages.ExtractLinks(text)
+	msg, ok := p.SelectedMessage()
+	if !ok {
+		return nil
+	}
+	links := messages.MessageLinks(msg)
 	switch len(links) {
 	case 0:
 		return func() tea.Msg { return ToastMsg{Text: "No links in message"} }
@@ -1563,23 +1529,15 @@ func (a *App) openLinksOfSelected() tea.Cmd {
 // "files" mode. Mirrors openLinksOfSelected. Images are excluded: they
 // already have the preview flow (O/v).
 func (a *App) downloadFilesOfSelected() tea.Cmd {
-	var atts []messages.Attachment
-	switch a.focusedPanel {
-	case PanelMessages:
-		msg, ok := a.messagepane.SelectedMessage()
-		if !ok {
-			return nil
-		}
-		atts = msg.Attachments
-	case PanelThread:
-		reply := a.threadPanel.SelectedReply()
-		if reply == nil {
-			return nil
-		}
-		atts = reply.Attachments
-	default:
+	p, _, ok := a.focusedContentPane()
+	if !ok {
 		return nil
 	}
+	msg, ok := p.SelectedMessage()
+	if !ok {
+		return nil
+	}
+	atts := msg.Attachments
 	files := make([]messages.Attachment, 0, len(atts))
 	for _, att := range atts {
 		if att.Kind == "file" && att.DownloadURL != "" {
@@ -1973,12 +1931,11 @@ func (a *App) maybeFetchOlderHistory(atTop bool) tea.Cmd {
 // both lowercase `q` and Ctrl+C (the latter intercepted globally so an
 // accidental Ctrl+C in any mode never silently kills the app).
 func (a *App) openQuitConfirm() {
-	a.confirmPrompt.Open(
+	a.openConfirmPrompt(
 		"Quit slk?",
 		"All workspace connections will close.",
 		func() tea.Msg { return tea.Quit() },
 	)
-	a.SetMode(ModeConfirm)
 }
 
 func (a *App) handleEnter() tea.Cmd {
@@ -2025,10 +1982,8 @@ func (a *App) handleEnter() tea.Cmd {
 		if !ok {
 			return nil
 		}
-		channelID, ts, threadTS := it.ChannelID, it.TS, it.ThreadTS
-		return func() tea.Msg {
-			return ActivitySelectedMsg{ChannelID: channelID, TS: ts, ThreadTS: threadTS}
-		}
+		team := a.activeTeamID
+		return func() tea.Msg { return ActivitySelectedMsg{TeamID: team, Item: it} }
 	}
 
 	if a.focusedPanel == PanelMessages && a.view == ViewThreads {
@@ -2063,6 +2018,9 @@ func (a *App) openThreadForSelectedMessage() tea.Cmd {
 	msg, ok := a.messagepane.SelectedMessage()
 	if !ok {
 		return nil
+	}
+	if cmd, blocked := ephemeralGuard(msg); blocked {
+		return cmd
 	}
 	// Use the message's own TS as the thread parent. If it's a thread
 	// reply (a thread_broadcast row in the channel feed), the selected
@@ -2111,7 +2069,7 @@ func (a *App) applyThreadBreadcrumb(channelID, channelType string) {
 // and openThreadForPermalink (parent reconstructed from cache/stub).
 func (a *App) openThreadPanel(parent messages.MessageItem, channelID, threadTS string) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return a.uploadToastCmd("Upload in progress", 2*time.Second)
+		return toastWithClear(a, "Upload in progress", 2*time.Second)
 	}
 	a.cancelEdit()
 	a.threadVisible = true
@@ -2131,14 +2089,26 @@ func (a *App) openThreadPanel(parent messages.MessageItem, channelID, threadTS s
 	chID := ids.ChannelID(channelID)
 	tTS := ids.ThreadTS(threadTS)
 	var batch []tea.Cmd
-	if cached := threads.CacheRead(chID, tTS); len(cached) > 1 {
-		replies := cached[1:] // strip parent; reducer expects replies-only
-		batch = append(batch, func() tea.Msg {
-			return ThreadRepliesLoadedMsg{ThreadTS: threadTS, Replies: replies}
-		})
+	if cmd := cachedThreadRepliesCmd(threads, chID, tTS); cmd != nil {
+		batch = append(batch, cmd)
 	}
 	batch = append(batch, func() tea.Msg { return threads.Fetch(chID, tTS) })
 	return tea.Batch(batch...)
+}
+
+// cachedThreadRepliesCmd reads the thread from cache now and returns a
+// cmd delivering its replies as a FromCache ThreadRepliesLoadedMsg, or
+// nil when the cache holds no replies. Every thread open pairs it with
+// the network fetch, which alone marks the thread read.
+func cachedThreadRepliesCmd(threads core.ThreadService, chID ids.ChannelID, threadTS ids.ThreadTS) tea.Cmd {
+	cached := threads.CacheRead(chID, threadTS)
+	if len(cached) <= 1 {
+		return nil
+	}
+	replies := cached[1:] // strip parent; reducer expects replies-only
+	return func() tea.Msg {
+		return ThreadRepliesLoadedMsg{ThreadTS: string(threadTS), Replies: replies, FromCache: true}
+	}
 }
 
 func (a *App) SetMode(mode Mode) {
@@ -2157,6 +2127,20 @@ func (a *App) SetMode(mode Mode) {
 		a.pendingTop = false
 		a.statusbar.SetHelpHint(a.defaultHelpHint())
 	}
+	// Same for a pending `m` chord, and for the same reason: ctrl+c is
+	// intercepted in handleKey before mode dispatch, so it never reaches
+	// handleMarkChord to be cancelled there. Left armed, the next letter
+	// key in normal mode would be swallowed as a mark name instead of
+	// doing its own job.
+	if a.pendingMark {
+		a.pendingMark = false
+		a.statusbar.SetHelpHint(a.defaultHelpHint())
+	}
+	// Same for a pending `'` chord (handleJumpChord).
+	if a.pendingJumpMark {
+		a.pendingJumpMark = false
+		a.statusbar.SetHelpHint(a.defaultHelpHint())
+	}
 	if mode == ModeInsert {
 		a.clearSelections()
 	}
@@ -2169,6 +2153,12 @@ func (a *App) SetMode(mode Mode) {
 	if a.mode == ModeCommand && mode != ModeCommand {
 		a.cmdline = ""
 		a.statusbar.SetCommandLine("")
+	}
+	// Same for the marks list: a global intercept (ctrl+c) leaves
+	// ModeMarks without going through handleMarksMode, and the list
+	// would stay drawn over the screen, and over the quit prompt.
+	if a.mode == ModeMarks && mode != ModeMarks {
+		a.marksOverlay.Close()
 	}
 	a.mode = mode
 	a.statusbar.SetMode(mode)
@@ -2320,7 +2310,7 @@ func (a *App) CloseThread() {
 // press or list reload).
 func (a *App) openSelectedThreadCmd(debounce bool) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return a.uploadToastCmd("Upload in progress", 2*time.Second)
+		return toastWithClear(a, "Upload in progress", 2*time.Second)
 	}
 	sum, ok := a.threadsView.SelectedSummary()
 	if !ok {
@@ -2376,11 +2366,8 @@ func (a *App) openSelectedThreadCmd(debounce bool) tea.Cmd {
 	tThreadTS := ids.ThreadTS(threadTS)
 	if !debounce {
 		var batch []tea.Cmd
-		if cached := threads.CacheRead(tChID, tThreadTS); len(cached) > 1 {
-			replies := cached[1:] // strip parent; reducer expects replies-only
-			batch = append(batch, func() tea.Msg {
-				return ThreadRepliesLoadedMsg{ThreadTS: threadTS, Replies: replies}
-			})
+		if cmd := cachedThreadRepliesCmd(threads, tChID, tThreadTS); cmd != nil {
+			batch = append(batch, cmd)
 		}
 		batch = append(batch, func() tea.Msg { return threads.Fetch(tChID, tThreadTS) })
 		return tea.Batch(batch...)
@@ -2402,7 +2389,7 @@ func (a *App) applyThreadUnreadBoundary(channelID, threadTS string) {
 	if channelID == "" || threadTS == "" {
 		return
 	}
-	a.threadPanel.SetUnreadBoundary(a.threads.ThreadLastRead(
+	a.threadPanel.SetLastReadTS(a.threads.ThreadLastRead(
 		ids.ChannelID(channelID), ids.ThreadTS(threadTS)))
 }
 
@@ -2859,11 +2846,7 @@ func (a *App) SetEmojiContext(ctx messages.EmojiContext) {
 	for _, m := range a.allWinModels() {
 		m.SetEmojiContext(ctx)
 	}
-	a.threadPanel.SetEmojiContext(thread.EmojiContext{
-		PlaceCtx: ctx.PlaceCtx,
-		Cells:    ctx.Cells,
-		Customs:  ctx.Customs,
-	})
+	a.threadPanel.SetEmojiContext(ctx)
 	a.reactionPicker.SetEmojiContext(reactionpicker.EmojiContext{
 		PlaceCtx: ctx.PlaceCtx,
 		Cells:    ctx.Cells,
@@ -3273,6 +3256,26 @@ func (a *App) SetReactionService(r core.ReactionService) {
 	a.reactions = r
 }
 
+// SetInteractionService wires the service the action dialog presses
+// buttons through. A nil s restores the no-op, whose presses fail with
+// errors.ErrUnsupported and so surface as a toast.
+func (a *App) SetInteractionService(s core.InteractionService) {
+	if s == nil {
+		s = noopInteractionService
+	}
+	a.interactions = s
+}
+
+// SetCommandService wires the service slash commands run through. A nil s
+// restores the no-op, whose runs fail with errors.ErrUnsupported and so
+// surface as a toast.
+func (a *App) SetCommandService(s core.CommandService) {
+	if s == nil {
+		s = noopCommandService
+	}
+	a.commandSvc = s
+}
+
 // SetProfileService wires the App's ProfileService collaborator, used
 // by the K-opened user-profile dialog. A nil s restores the no-op
 // default, so a caller can pass through cmd/slk's wiring unconditionally.
@@ -3326,6 +3329,18 @@ func (a *App) OpenThread() (channelID, threadTS string) {
 // SetWorkspaceService wires workspace switching.
 func (a *App) SetWorkspaceService(s core.WorkspaceService) {
 	a.workspaceSvc = s
+}
+
+// switchWorkspace returns the command that switches to teamID. Every
+// switch goes through here, because it first saves a theme a cycle
+// left pending. The command reads the target workspace's theme, and
+// the target can be the workspace that pending theme belongs to.
+func (a *App) switchWorkspace(teamID string) tea.Cmd {
+	a.SavePendingTheme()
+	switcher := a.workspaceSvc
+	return func() tea.Msg {
+		return switcher.Switch(teamID)
+	}
 }
 
 // SetThemeItems sets the available themes for the switcher.
@@ -3418,15 +3433,16 @@ func (a *App) SetSidebarStaleThreshold(d time.Duration) {
 }
 
 // renderTypingLine returns the styled typing indicator for the current
-// channel, or an empty string if no one is typing. Stays on App because
-// it pulls in messagepane name resolution and styles. State and
-// formatting live in internal/ui/typing.go.
+// channel (people typing, apps working), or an empty string if there is
+// neither. Stays on App because it pulls in messagepane name resolution
+// and styles. State and formatting live in internal/ui/typing.go.
 func (a *App) renderTypingLine() string {
 	if !a.typing.Enabled() {
 		return ""
 	}
 	userIDs := a.typing.UsersExcluding(a.activeChannelID, a.currentUserID)
-	if len(userIDs) == 0 {
+	botIDs := a.typing.WorkingBots(a.activeChannelID)
+	if len(userIDs) == 0 && len(botIDs) == 0 {
 		return ""
 	}
 	// Resolve user IDs to display names
@@ -3438,7 +3454,11 @@ func (a *App) renderTypingLine() string {
 		}
 		names = append(names, name)
 	}
-	return styles.TypingIndicator.Render(typingIndicatorText(names))
+	botNames := make([]string, 0, len(botIDs))
+	for _, id := range botIDs {
+		botNames = append(botNames, a.userNameFor(id))
+	}
+	return styles.TypingIndicator.Render(typingRowText(names, botNames))
 }
 
 func (a *App) View() tea.View {
@@ -3709,22 +3729,15 @@ func (a *App) isOwnMessage(m messages.MessageItem) bool {
 // pane. Returns ok=false if nothing is selected or the focused panel is
 // not a message-bearing pane.
 func (a *App) selectedMessageContext() (channelID, ts, text, userID string, panel Panel, ok bool) {
-	switch a.focusedPanel {
-	case PanelMessages:
-		msg, sel := a.messagepane.SelectedMessage()
-		if !sel {
-			return "", "", "", "", 0, false
-		}
-		return a.activeChannelID, msg.TS, msg.Text, msg.UserID, PanelMessages, true
-	case PanelThread:
-		reply := a.threadPanel.SelectedReply()
-		if reply == nil {
-			return "", "", "", "", 0, false
-		}
-		return a.threadPanel.ChannelID(), reply.TS, reply.Text, reply.UserID, PanelThread, true
-	default:
+	p, channelID, focused := a.focusedContentPane()
+	if !focused {
 		return "", "", "", "", 0, false
 	}
+	msg, sel := p.SelectedMessage()
+	if !sel {
+		return "", "", "", "", 0, false
+	}
+	return channelID, msg.TS, msg.Text, msg.UserID, a.focusedPanel, true
 }
 
 const maxAttachmentSize = 10 * 1024 * 1024 // 10 MB cap
@@ -3739,10 +3752,10 @@ func (a *App) submitWithAttachments(c *compose.Model) tea.Cmd {
 	// Second line of defence: both callers sit behind handleInsertMode's
 	// upload guard, so no key reaches this while an upload is in flight.
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return a.uploadToastCmd("Upload in progress", 2*time.Second)
+		return toastWithClear(a, "Upload in progress", 2*time.Second)
 	}
 	if a.editing.IsActive() {
-		return a.uploadToastCmd("Cannot attach files to an edit (send a new message)", 3*time.Second)
+		return toastWithClear(a, "Cannot attach files to an edit (send a new message)", 3*time.Second)
 	}
 	attachments := c.Attachments()
 	if len(attachments) == 0 {
@@ -3759,13 +3772,13 @@ func (a *App) submitWithAttachments(c *compose.Model) tea.Cmd {
 		threadTS = ""
 	}
 	if channelID == "" || a.files == nil {
-		return a.uploadToastCmd("Cannot upload: no active channel", 2*time.Second)
+		return toastWithClear(a, "Cannot upload: no active channel", 2*time.Second)
 	}
 
 	c.SetUploading(true)
 	cmds := []tea.Cmd{
 		teaCmd(a.files.Upload(channelID, threadTS, caption, attachments)),
-		a.uploadToastCmd(fmt.Sprintf("Uploading 0/%d…", len(attachments)), 30*time.Second),
+		toastWithClear(a, fmt.Sprintf("Uploading 0/%d…", len(attachments)), 30*time.Second),
 	}
 	return tea.Batch(cmds...)
 }
@@ -3814,7 +3827,7 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 	// 1. Image bytes from the OS clipboard.
 	if imgBytes := a.desktop.ReadClipboard(core.ClipboardImage); len(imgBytes) > 0 {
 		if int64(len(imgBytes)) > maxAttachmentSize {
-			return true, a.uploadToastCmd(
+			return true, toastWithClear(a,
 				fmt.Sprintf("Image too large (%s > 10 MB limit)", humanSize(int64(len(imgBytes)))),
 				3*time.Second,
 			)
@@ -3826,7 +3839,7 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 			Mime:     "image/png",
 			Size:     int64(len(imgBytes)),
 		})
-		return true, a.uploadToastCmd(
+		return true, toastWithClear(a,
 			fmt.Sprintf("Attached: %s (%s)", filename, humanSize(int64(len(imgBytes)))),
 			2*time.Second,
 		)
@@ -3837,10 +3850,10 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 		info, err := a.desktop.Stat(path)
 		if err == nil && info.Mode().IsRegular() {
 			if info.Size() > maxAttachmentSize {
-				return true, a.uploadToastCmd("File too large (>10 MB limit)", 3*time.Second)
+				return true, toastWithClear(a, "File too large (>10 MB limit)", 3*time.Second)
 			}
 			if info.Size() == 0 {
-				return true, a.uploadToastCmd("Empty file", 2*time.Second)
+				return true, toastWithClear(a, "Empty file", 2*time.Second)
 			}
 			filename := filepath.Base(path)
 			target.AddAttachment(core.PendingAttachment{
@@ -3849,7 +3862,7 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 				Mime:     mime.TypeByExtension(filepath.Ext(path)),
 				Size:     info.Size(),
 			})
-			return true, a.uploadToastCmd(
+			return true, toastWithClear(a,
 				fmt.Sprintf("Attached: %s (%s)", filename, humanSize(info.Size())),
 				2*time.Second,
 			)
@@ -3992,7 +4005,7 @@ func (a *App) applyThreadMark(channelID, threadTS, lastRead string) {
 		a.threadPanel.ThreadTS() == threadTS {
 		// The panel renders its "── new ──" landmark after the boundary
 		// ts, so a fully-caught-up cursor renders no landmark.
-		a.threadPanel.SetUnreadBoundary(lastRead)
+		a.threadPanel.SetLastReadTS(lastRead)
 	}
 	a.applyThreadMarkListState(channelID, threadTS, lastRead)
 }
@@ -4092,7 +4105,7 @@ func (a *App) applyThreadMarkUnread(channelID, threadTS, boundaryTS string) {
 	if a.threadVisible &&
 		a.threadPanel.ChannelID() == channelID &&
 		a.threadPanel.ThreadTS() == threadTS {
-		a.threadPanel.SetUnreadBoundary(boundaryTS)
+		a.threadPanel.SetLastReadTS(boundaryTS)
 	}
 	if a.threadsView.MarkByThreadTSUnread(channelID, threadTS) {
 		a.sidebar.SetThreadsUnreadCount(a.threadsView.UnreadCount())
@@ -4120,14 +4133,13 @@ func (a *App) beginDeleteOfSelected() tea.Cmd {
 		preview = string(runes[:maxPreview]) + "…"
 	}
 
-	a.confirmPrompt.Open(
+	a.openConfirmPrompt(
 		"Delete message?",
 		preview,
 		func() tea.Msg {
 			return DeleteMessageMsg{ChannelID: channelID, TS: ts}
 		},
 	)
-	a.SetMode(ModeConfirm)
 	return nil
 }
 
@@ -4370,20 +4382,6 @@ func resolveFilePath(text string) (string, bool) {
 		return "", false
 	}
 	return filepath.Clean(s), true
-}
-
-// uploadToastCmd builds a tea.Cmd that sets the status bar to the
-// given message and schedules a CopiedClearMsg after dur.
-func (a *App) uploadToastCmd(text string, dur time.Duration) tea.Cmd {
-	return tea.Batch(
-		func() tea.Msg {
-			a.statusbar.SetToast(text)
-			return nil
-		},
-		tea.Tick(dur, func(time.Time) tea.Msg {
-			return statusbar.CopiedClearMsg{}
-		}),
-	)
 }
 
 // scheduleChannelSearch defers a channels/search for the finder's

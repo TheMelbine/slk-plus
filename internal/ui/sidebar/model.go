@@ -376,9 +376,10 @@ type Model struct {
 // provider's order and keys collapse state by section ID. Pass nil
 // to revert to config-glob behavior.
 func (m *Model) SetSectionsProvider(p SectionsProvider) {
+	key, hadKey := m.currentCursorKey()
 	m.sectionsProvider = p
 	m.rebuildFilter()
-	m.rebuildNavPreserveCursor()
+	m.rebuildNavWithCursor(key, hadKey)
 	m.cacheValid = false
 	m.dirty()
 }
@@ -587,9 +588,10 @@ func (m *Model) now() time.Time {
 
 // SetNowFunc injects a clock for tests. Pass nil to revert to time.Now.
 func (m *Model) SetNowFunc(fn func() time.Time) {
+	key, hadKey := m.currentCursorKey()
 	m.nowFn = fn
 	m.rebuildFilter()
-	m.rebuildNavPreserveCursor()
+	m.rebuildNavWithCursor(key, hadKey)
 	m.cacheValid = false
 	m.dirty()
 }
@@ -602,9 +604,10 @@ func (m *Model) SetStaleThreshold(d time.Duration) {
 	if m.staleThreshold == d {
 		return
 	}
+	key, hadKey := m.currentCursorKey()
 	m.staleThreshold = d
 	m.rebuildFilter()
-	m.rebuildNavPreserveCursor()
+	m.rebuildNavWithCursor(key, hadKey)
 	m.cacheValid = false
 	m.dirty()
 }
@@ -617,9 +620,10 @@ func (m *Model) SetActiveChannelID(id string) {
 	if m.activeID == id {
 		return
 	}
+	key, hadKey := m.currentCursorKey()
 	m.activeID = id
 	m.rebuildFilter()
-	m.rebuildNavPreserveCursor()
+	m.rebuildNavWithCursor(key, hadKey)
 	m.cacheValid = false
 	m.dirty()
 }
@@ -822,10 +826,13 @@ func (m *Model) ActivityUnreadCount() int { return m.activityUnread }
 // context change (e.g. workspace switch) should explicitly call
 // SelectThreadsRow() after SetItems.
 func (m *Model) SetItems(items []ChannelItem) {
+	// Capture identity before replacing either items or filtered indices.
+	// Looking it up after a reorder can silently select a different peer.
+	key, hadKey := m.currentCursorKey()
 	m.items = items
 	m.applyPresence()
 	m.rebuildFilter()
-	m.rebuildNavPreserveCursor()
+	m.rebuildNavWithCursor(key, hadKey)
 	m.cacheValid = false
 	m.dirty()
 }
@@ -872,6 +879,7 @@ func (m *Model) ResetPresence() {
 // staleness state may have changed) is reflected in the visible list
 // immediately.
 func (m *Model) UpsertItem(item ChannelItem) {
+	key, hadKey := m.currentCursorKey()
 	// Seed the incoming item with known live presence so a DM opened at
 	// runtime shows the right dot immediately instead of the "away"
 	// default it was built with.
@@ -887,7 +895,7 @@ func (m *Model) UpsertItem(item ChannelItem) {
 		if m.items[i].ID == item.ID {
 			m.items[i] = item
 			m.rebuildFilter()
-			m.rebuildNavPreserveCursor()
+			m.rebuildNavWithCursor(key, hadKey)
 			m.cacheValid = false
 			m.dirty()
 			return
@@ -895,7 +903,7 @@ func (m *Model) UpsertItem(item ChannelItem) {
 	}
 	m.items = append(m.items, item)
 	m.rebuildFilter()
-	m.rebuildNavPreserveCursor()
+	m.rebuildNavWithCursor(key, hadKey)
 	m.cacheValid = false
 	m.dirty()
 }
@@ -1371,12 +1379,23 @@ func (m *Model) rebuildFilter() {
 
 	// Sort filtered indices to match the visual section display order so that
 	// j/k navigation traverses items in the same order they're rendered.
-	// Within a section:
+	// Within the real Slack stars section, channels form one block before
+	// people/app/group conversations. Within each block (and other sections):
 	//   1. Channels with ChannelOrder > 0 come first, sorted ascending
 	//      (from SectionDef "<pattern>:<N>" suffixes; config-mode only).
 	//   2. Channels with ChannelOrder == 0 follow, in input order
 	//      (preserves Slack-provided order in Slack mode, and
 	//      bootstrap-order in config mode without ":N" suffixes).
+	// Snapshot star identities once per rebuild, not inside the comparator.
+	// Names are presentation only: a custom section named Starred is ordinary.
+	stars := make(map[string]bool)
+	if m.sectionsProvider != nil && m.sectionsProvider.Ready() {
+		for _, sec := range m.sectionsProvider.OrderedSlackSections() {
+			if sec.Type == "stars" {
+				stars[sec.ID] = true
+			}
+		}
+	}
 	sectionOrder := m.modelOrderedSections(m.filtered)
 	rank := make(map[string]int, len(sectionOrder))
 	for i, name := range sectionOrder {
@@ -1384,10 +1403,17 @@ func (m *Model) rebuildFilter() {
 	}
 	sort.SliceStable(m.filtered, func(a, b int) bool {
 		ia, ib := m.filtered[a], m.filtered[b]
-		ra := rank[m.sectionFor(m.items[ia])]
-		rb := rank[m.sectionFor(m.items[ib])]
+		sa, sb := m.sectionFor(m.items[ia]), m.sectionFor(m.items[ib])
+		ra, rb := rank[sa], rank[sb]
 		if ra != rb {
 			return ra < rb
+		}
+		if sa == sb && stars[sa] {
+			ca := m.items[ia].Type == "channel" || m.items[ia].Type == "private"
+			cb := m.items[ib].Type == "channel" || m.items[ib].Type == "private"
+			if ca != cb {
+				return ca
+			}
 		}
 		// Within a section: annotated (ChannelOrder > 0) before
 		// un-annotated; among annotated, lower wins; among
@@ -1472,6 +1498,14 @@ func (m *Model) rebuildNav() {
 // target no longer exists.
 func (m *Model) rebuildNavPreserveCursor() {
 	key, hadKey := m.currentCursorKey()
+	m.rebuildNavWithCursor(key, hadKey)
+}
+
+// rebuildNavWithCursor restores an identity captured before an item/filter
+// mutation. hadKey=false leaves normal cursor clamping in place; a removed
+// target falls back to Threads. Callers that reorder items must capture the
+// key before mutation rather than interpreting old nav indices afterward.
+func (m *Model) rebuildNavWithCursor(key cursorKey, hadKey bool) {
 	m.rebuildNav()
 	if !hadKey {
 		return

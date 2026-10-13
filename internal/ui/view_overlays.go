@@ -51,7 +51,7 @@ func (a *App) applyOverlays(screen string) string {
 		screen = a.reactionPicker.ViewOverlay(a.width, a.height, screen)
 	}
 	if a.confirmPrompt.IsVisible() {
-		screen = a.confirmPrompt.ViewOverlay(a.width, a.height, screen)
+		screen = a.confirmPromptOverlay(screen)
 	}
 	if a.workspaceFinder.IsVisible() {
 		screen = a.workspaceFinder.ViewOverlay(a.width, a.height, screen)
@@ -73,6 +73,9 @@ func (a *App) applyOverlays(screen string) string {
 	}
 	if a.userProfile.IsVisible() {
 		screen = a.userProfile.ViewOverlay(a.width, a.height, screen, a.userProfileLive())
+	}
+	if a.marksOverlay.IsVisible() {
+		screen = a.marksOverlay.ViewOverlay(a.width, a.height, screen)
 	}
 	if a.mode == ModePresenceCustomSnooze {
 		screen = presencemenu.CustomSnoozeView(a.width, a.height, screen, a.presence.SnoozeBuf())
@@ -100,6 +103,7 @@ func (a *App) overlayActive() bool {
 		a.reactionsView.IsVisible() ||
 		a.linkPicker.IsVisible() ||
 		a.userProfile.IsVisible() ||
+		a.marksOverlay.IsVisible() ||
 		a.mode == ModePresenceCustomSnooze ||
 		a.bootstrap.IsLoading()
 }

@@ -10,6 +10,7 @@ import (
 	"image"
 	"io/fs"
 
+	"github.com/gammons/slk/internal/core/blocks"
 	"github.com/gammons/slk/internal/ids"
 	imgpkg "github.com/gammons/slk/internal/image"
 )
@@ -39,6 +40,35 @@ type ReactionService interface {
 	// LoadFrecent calls surface it. Called after every successful
 	// reaction add.
 	RecordFrecent(emoji string)
+}
+
+// InteractionService presses interactive message elements. Pressing is
+// intent from the action dialog; on success Slack answers over the
+// WebSocket (an ephemeral is deleted), so only the error comes back and App
+// turns it into a toast. Blocking: callers run it from a tea.Cmd.
+//
+// Build one with NewInteractionService.
+type InteractionService interface {
+	// PressAttachmentAction presses a legacy attachment button, echoing
+	// action back as received (chat.attachmentAction). serviceID is the
+	// posting app's bot ID.
+	PressAttachmentAction(channelID ids.ChannelID, messageTS ids.MessageTS,
+		attachmentID int, callbackID, serviceID string, action blocks.LegacyAction, ephemeral bool) error
+}
+
+// CommandService runs Slack slash commands. Run is blocking (callers run
+// it from a tea.Cmd). What a command produces arrives over the WebSocket,
+// so only the error comes back: *CommandError when Slack refuses the
+// command, any other error for a transport failure.
+//
+// Build one with NewCommandService.
+type CommandService interface {
+	// Run executes command ("/giphy", with its slash, lowercased) with
+	// args in channelID of workspace teamID — the one the command was
+	// typed in, which the user may have switched away from since — in
+	// threadTS's thread when threadTS is set.
+	// args is wire-form text (<@U…>, <#C…|name>); "" for none.
+	Run(teamID string, channelID ids.ChannelID, threadTS ids.ThreadTS, command, args string) error
 }
 
 // ThreadService is the App's interface to Slack's thread surfaces:
@@ -110,8 +140,8 @@ type ThreadService interface {
 // view — @mentions, thread replies, reactions to your messages, and
 // DMs. Implementations are wired by cmd/slk/main.go.
 //
-// Marking items read is out of scope: opening an item marks the
-// underlying conversation read via existing paths.
+// SetRead changes one item's read state in the feed itself; opening an
+// item also marks its conversation read through the existing paths.
 type ActivityService interface {
 	// Fetch loads the first page of the Activity feed for teamID.
 	// limit is the max items; unreadOnly requests the server-side
@@ -123,6 +153,11 @@ type ActivityService interface {
 	// wanted message timestamps. Returns a Msg (typically
 	// ActivityBodiesLoadedMsg), or nil when there's nothing to fetch.
 	Hydrate(teamID ids.TeamID, refs map[string][]string) Msg
+
+	// SetRead marks item read (read=true) or unread in teamID's
+	// Activity feed. Returns a Msg (typically ActivityReadSetMsg,
+	// carrying any error so the caller can undo an optimistic change).
+	SetRead(teamID ids.TeamID, item ActivityItem, read bool) Msg
 }
 
 // MessageService is the App's interface to Slack's per-message
@@ -255,12 +290,6 @@ type ChannelService interface {
 	// toggles it. Fire-and-forget.
 	SaveSectionCollapse(teamID, sectionKey string, collapsed bool)
 
-	// RunCommand runs a slash command in the channel (in the thread
-	// when threadTS is set). command carries the leading slash. Returns
-	// a Msg (typically SlashCommandRanMsg); the command's response
-	// arrives separately, as a message.
-	RunCommand(channelID ids.ChannelID, threadTS, command, text string) Msg
-
 	// CycleNotifyLevel moves the channel's Slack notification level one
 	// step along everything → mentions → nothing → everything. Returns
 	// a Msg (typically ChannelNotifyLevelChangedMsg).
@@ -362,7 +391,11 @@ type PresenceService interface {
 
 // SettingsService persists the user's display preferences.
 type SettingsService interface {
-	SaveTheme(name string, scope ThemeScope)
+	// SaveTheme persists a theme choice. For ThemeScopeWorkspace, teamID
+	// is the workspace the choice belongs to: the one the UI showed when
+	// the user chose. It can differ from the active workspace, which
+	// changes before the UI shows a switch. ThemeScopeGlobal ignores it.
+	SaveTheme(teamID, name string, scope ThemeScope)
 	SaveSidebarWidth(width int)
 }
 

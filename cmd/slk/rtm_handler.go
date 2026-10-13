@@ -12,6 +12,7 @@ import (
 	"github.com/gammons/slk/internal/core"
 	"github.com/gammons/slk/internal/debuglog"
 	"github.com/gammons/slk/internal/notify"
+	slackclient "github.com/gammons/slk/internal/slack"
 	"github.com/gammons/slk/internal/ui"
 	"github.com/gammons/slk/internal/ui/messages"
 	"github.com/gammons/slk/internal/ui/sidebar"
@@ -137,14 +138,8 @@ func (h *rtmEventHandler) discoverConversation(channelID string) (sidebar.Channe
 func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subtype string, edited bool, files []slack.File, blocks slack.Blocks, attachments []slack.Attachment, botID, username string) {
 	// Bot messages (bot_message) carry no user, only a bot_id + username.
 	// Key the row on the bot_id and resolve its avatar/name via bots.info,
-	// mirroring the fetch-path messageAuthor helper.
-	authorID := userID
-	if authorID == "" && botID != "" {
-		authorID = botID
-		if h.wsCtx != nil && h.wsCtx.UserResolver != nil {
-			h.wsCtx.UserResolver.RequestBot(botID, username)
-		}
-	}
+	// mirroring the fetch path's messageAuthor (cmd/slk/users.go).
+	authorID := h.messageAuthor(userID, botID, username)
 	// Synchronous, so the channel's row and type exist before the writes
 	// below. The UI hears of it only after the unread write.
 	discovered, discoveredFinder, isNew := h.discoverConversation(channelID)
@@ -405,6 +400,34 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 		return
 	}
 
+	item := h.messageItemFromEvent(authorID, userID, username, ts, text, threadTS, subtype, edited, files, blocks, attachments)
+	debuglog.Cache("OnMessage: team=%s channel=%s ts=%s subtype=%q thread_ts=%s decision=dispatched_to_app",
+		h.workspaceID, channelID, ts, subtype, threadTS)
+	if h.program != nil {
+		h.program.Send(ui.NewMessageMsg{ChannelID: channelID, Message: item})
+	}
+}
+
+// messageAuthor returns the ID a WebSocket message is attributed to. A
+// bot message carries no user, only a bot_id and username: it is keyed
+// on the bot_id and its avatar/name resolved via bots.info, mirroring
+// the fetch-path messageAuthor helper.
+func (h *rtmEventHandler) messageAuthor(userID, botID, username string) string {
+	if userID != "" || botID == "" {
+		return userID
+	}
+	if h.wsCtx != nil && h.wsCtx.UserResolver != nil {
+		h.wsCtx.UserResolver.RequestBot(botID, username)
+	}
+	return botID
+}
+
+// messageItemFromEvent builds the UI's MessageItem for a message that
+// arrived over the WebSocket: resolves the author's display name
+// (requesting it when unknown; a bot's username stands in until
+// bots.info answers) and converts files, blocks and legacy attachments.
+// Shared by OnMessage and OnEphemeralMessage.
+func (h *rtmEventHandler) messageItemFromEvent(authorID, userID, username, ts, text, threadTS, subtype string, edited bool, files []slack.File, blocks slack.Blocks, attachments []slack.Attachment) messages.MessageItem {
 	userName, ok := resolveUserCached(authorID, h.userNames, h.db)
 	if !ok {
 		userName = authorID
@@ -413,31 +436,63 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 				h.wsCtx.UserResolver.Request(userID)
 			}
 		} else if username != "" {
-			// Bot author: show its name immediately; bots.info (already
-			// requested above) fills in the avatar.
 			userName = username
 		}
 	}
-	debuglog.Cache("OnMessage: team=%s channel=%s ts=%s subtype=%q thread_ts=%s decision=dispatched_to_app",
-		h.workspaceID, channelID, ts, subtype, threadTS)
-	if h.program != nil {
-		h.program.Send(ui.NewMessageMsg{
-			ChannelID: channelID,
-			Message: messages.MessageItem{
-				TS:                ts,
-				UserID:            authorID,
-				UserName:          userName,
-				Text:              text,
-				Timestamp:         formatTimestamp(ts, h.tsFormat),
-				ThreadTS:          threadTS,
-				Subtype:           subtype,
-				IsEdited:          edited,
-				Attachments:       extractAttachments(files),
-				Blocks:            extractBlocks(blocks),
-				LegacyAttachments: extractLegacyAttachments(attachments),
-			},
-		})
+	return messages.MessageItem{
+		TS:                ts,
+		UserID:            authorID,
+		UserName:          userName,
+		Text:              text,
+		Timestamp:         formatTimestamp(ts, h.tsFormat),
+		ThreadTS:          threadTS,
+		Subtype:           subtype,
+		IsEdited:          edited,
+		Attachments:       extractAttachments(files),
+		Blocks:            extractBlocks(blocks),
+		LegacyAttachments: extractLegacyAttachments(attachments),
 	}
+}
+
+// OnEphemeralMessage handles a message only the current user can see:
+// Slackbot's "not in this channel" notice, an app's slash-command
+// reply. Slack never returns these from history, so nothing durable is
+// touched -- no cache row, no sync watermark, no unread or mention
+// write, no conversation discovery, no notification. It goes to the UI
+// only, and only for the active workspace: there is nowhere to keep one
+// for later.
+func (h *rtmEventHandler) OnEphemeralMessage(m slackclient.EphemeralMessage) {
+	if h.isActive != nil && !h.isActive() {
+		debuglog.Cache("OnEphemeralMessage: team=%s channel=%s ts=%s decision=dropped_inactive_workspace",
+			h.workspaceID, m.ChannelID, m.TS)
+		return
+	}
+	authorID := h.messageAuthor(m.UserID, m.BotID, m.Username)
+	item := h.messageItemFromEvent(authorID, m.UserID, m.Username, m.TS, m.Text, m.ThreadTS, m.Subtype, false, nil, m.Blocks, m.Attachments)
+	applyActionIDs(item.LegacyAttachments, m.ActionIDs)
+	item.Ephemeral = true
+	item.BotID = m.BotID
+	debuglog.Cache("OnEphemeralMessage: team=%s channel=%s ts=%s thread_ts=%s decision=dispatched_to_app",
+		h.workspaceID, m.ChannelID, m.TS, m.ThreadTS)
+	if h.program != nil {
+		h.program.Send(ui.NewMessageMsg{ChannelID: m.ChannelID, Message: item})
+	}
+}
+
+// OnViewOpened tells the user an app opened a modal slk cannot show yet
+// (spec §3.5). Nothing else is done with the view.
+func (h *rtmEventHandler) OnViewOpened(title string) {
+	if h.isActive != nil && !h.isActive() {
+		return
+	}
+	if h.program == nil {
+		return
+	}
+	text := "This command opened a dialog slk can't show yet"
+	if title != "" {
+		text = title + " opened a dialog slk can't show yet"
+	}
+	h.program.Send(ui.ToastMsg{Text: text})
 }
 
 func (h *rtmEventHandler) OnMessageDeleted(channelID, ts string) {
@@ -526,40 +581,22 @@ func (h *rtmEventHandler) OnUserTyping(channelID, userID string) {
 	})
 }
 
-// OnEphemeralMessage shows a message only the user sees (a slash
-// command's response) in the active workspace. Nothing is cached and
-// read state is untouched: Slack drops such messages on reload, and
-// the next channel load does the same here.
-func (h *rtmEventHandler) OnEphemeralMessage(channelID, userID, ts, text, threadTS string, blocks slack.Blocks, attachments []slack.Attachment, botID, username string) {
-	if h.program == nil || (h.isActive != nil && !h.isActive()) {
-		return
-	}
-	authorID := userID
-	if authorID == "" {
-		authorID = botID
-	}
-	userName := username
-	switch {
-	case userID == "USLACKBOT":
-		userName = "Slackbot"
-	case userName == "":
-		if resolved, ok := resolveUserCached(authorID, h.userNames, h.db); ok {
-			userName = resolved
-		} else {
-			userName = authorID
+func (h *rtmEventHandler) OnAssistantStatus(s slackclient.AssistantStatus) {
+	// The status names the app; one slk has not seen yet is fetched,
+	// as an unknown message author is, so it does not stay a raw ID.
+	if s.Status != "" {
+		if _, ok := resolveUserCached(s.BotUserID, h.userNames, h.db); !ok && h.wsCtx != nil && h.wsCtx.UserResolver != nil {
+			h.wsCtx.UserResolver.Request(s.BotUserID)
 		}
 	}
-	h.program.Send(ui.EphemeralMessageMsg{
-		ChannelID: channelID,
-		Message: messages.MessageItem{
-			TS:                ts,
-			UserID:            authorID,
-			UserName:          userName,
-			Text:              text,
-			Timestamp:         formatTimestamp(ts, h.tsFormat),
-			ThreadTS:          threadTS,
-			Blocks:            extractBlocks(blocks),
-			LegacyAttachments: extractLegacyAttachments(attachments),
-		},
+	if h.program == nil {
+		return
+	}
+	h.program.Send(ui.BotStatusMsg{
+		WorkspaceID: h.workspaceID,
+		ChannelID:   s.ChannelID,
+		ThreadTS:    s.ThreadTS,
+		BotUserID:   s.BotUserID,
+		Status:      s.Status,
 	})
 }
