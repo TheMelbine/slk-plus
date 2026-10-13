@@ -4,7 +4,7 @@ A fork of [slk](https://github.com/gammons/slk) by Grant Ammons with changes I w
 
 ## What slk-plus adds
 
-![slk-plus demo: cycling a channel's notification level, starring it, following a thread, avatars in the mention picker](docs/assets/demo/plus.gif)
+![slk-plus demo: cycling a channel's notification level, starring it, following a thread, avatars in the mention picker, the Activity feed](docs/assets/demo/plus.gif)
 
 **Notifications**
 

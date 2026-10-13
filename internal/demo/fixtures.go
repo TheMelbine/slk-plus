@@ -164,7 +164,8 @@ func lumenLabs() teamSpec {
 			}},
 			{id: dmSam, name: "Sam Okafor", typ: "dm", dmUserID: uSam, unread: 1, mentions: 1, msgs: []msgSpec{
 				{user: uSam, ago: 28 * hr, text: "Rate limiter design doc is ready for a look"},
-				{user: uAlex, ago: 27 * hr, text: "Reading it now"},
+				{user: uAlex, ago: 27 * hr, text: "Reading it now",
+					reactions: []reactSpec{reacts("pray", uSam)}},
 				{user: uSam, ago: 15 * mn, text: "Got 5 minutes to talk about the limiter config?"},
 			}},
 			{id: dmMaya, name: "Maya Chen", typ: "dm", dmUserID: uMaya, msgs: []msgSpec{

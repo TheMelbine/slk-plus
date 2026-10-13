@@ -1,5 +1,5 @@
 # slk-plus: notification levels, stars, followed threads, avatars in the
-# mention picker. Recorded against the demo workspaces.
+# mention picker, the Activity feed. Recorded against the demo workspaces.
 Output docs/assets/demo/plus.gif
 Source docs/assets/demo/plus-settings.tape
 
@@ -48,4 +48,12 @@ Sleep 1.5s
 Escape
 Sleep 300ms
 Escape
+Sleep 1s
+
+# Ctrl+A: the Activity feed, avatars on cards, read items dimmed
+Ctrl+A
+Sleep 2.5s
+Type@400ms "jjj"
+Sleep 1.5s
+Ctrl+A
 Sleep 1s
