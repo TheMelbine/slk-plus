@@ -587,8 +587,8 @@ func blankLine(width int) string {
 
 // renderCard returns the two lines for one activity item:
 //
-//	<glyph> <author> · <channel>                        <relTime>
-//	  <body preview>            (reactions prefix the :emoji:)
+//	<glyph> [<emoji>] <author> · <channel>              <relTime>
+//	  <body preview>            (the emoji is a reaction's)
 //
 // The glyph carries the item type (see activityGlyph), so line 1 has no
 // "Mention in" / "Thread in" words. An unread card is drawn in the full
@@ -654,7 +654,15 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 		textStyle, nameStyle, fg = bodyStyle(), authorStyle(), messages.FgANSI()
 	}
 
+	opts := messages.RenderSlackMarkdownOpts{UserNames: m.userNames, ChannelNames: m.channelNames, SelfUserID: m.selfUserID}
+
 	left := glyphStyle(it.Type, it.IsUnread).Render(activityGlyph(it.Type)) + " "
+	// A reaction's emoji sits next to its glyph, so line 2 is the
+	// message alone and starts in the same column on every card.
+	if detail := activityDetail(it); detail != "" {
+		// The shortcode renderer already appends a space to each emoji.
+		left += strings.TrimSuffix(messages.RenderSlackMarkdownWith(detail, opts), " ") + " "
+	}
 	if author != "" {
 		left += nameStyle.Render(author)
 	}
@@ -669,22 +677,16 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 		right = mutedStyle().Render(rel)
 	}
 	line1 := layoutLine(left, right, contentWidth)
+	if !it.IsUnread {
+		line1 = recolorSGR(line1, messages.FgANSI(), messages.MutedFgANSI())
+	}
 
 	// Render the body the way the Threads view and message pane do, then
 	// fold it onto one line: a card has exactly cardContentLines lines,
 	// so a newline in the message would desync the windowing/click math.
-	opts := messages.RenderSlackMarkdownOpts{UserNames: m.userNames, ChannelNames: m.channelNames, SelfUserID: m.selfUserID}
 	preview := ""
 	if body.Text != "" {
 		preview = messages.RenderSlackMarkdownWith(body.Text, opts)
-	}
-	if detail := activityDetail(it); detail != "" {
-		detail = messages.RenderSlackMarkdownWith(detail, opts)
-		if preview != "" {
-			preview = detail + "  " + preview
-		} else {
-			preview = detail
-		}
 	}
 	// The renderer leaves plain text unstyled, so set the base text colour
 	// here (the message pane does the same via styles.MessageText). Only
@@ -890,7 +892,7 @@ func activityGlyph(itemType string) string {
 }
 
 // activityDetail returns a short detail (currently the reaction emoji
-// ":name:") that renderCard prefixes to the body preview for
+// ":name:") that renderCard puts after the glyph on line 1 for
 // message_reaction items. Pure so it can be unit-tested.
 func activityDetail(it core.ActivityItem) string {
 	if it.Type == "message_reaction" && it.Reaction != "" {

@@ -371,16 +371,21 @@ func TestRenderCard_CardBackgroundIsUnbroken(t *testing.T) {
 	}
 }
 
-// A reaction card leads with the reaction itself, rendered as an emoji.
+// A reaction card shows the reaction as an emoji next to its glyph on
+// line 1, so line 2 is the message alone and lines up with other cards.
 func TestRenderCard_ReactionRendersEmoji(t *testing.T) {
-	m := New(nil, "")
-	it := core.ActivityItem{Type: "message_reaction", ChannelID: "C1", TS: "1.1", Reaction: "eyes"}
+	m := New(map[string]string{"U1": "alice"}, "")
+	it := core.ActivityItem{Type: "message_reaction", ChannelID: "C1", TS: "1.1", AuthorID: "U1", Reaction: "eyes"}
 	m.SetItems([]core.ActivityItem{it})
+	m.SetBodies(map[string]core.ActivityMessage{core.ActivityMsgKey("C1", "1.1"): {Text: "hello", UserID: "U1"}})
 
-	_, l2 := m.renderCard(it, 80, false)
-	plain := ansi.Strip(l2)
-	if !strings.Contains(plain, "👀") || strings.Contains(plain, ":eyes:") {
-		t.Errorf("reaction preview = %q, want the 👀 emoji and no :eyes: shortcode", plain)
+	l1, l2 := m.renderCard(it, 80, false)
+	head := ansi.Strip(l1)
+	if !strings.Contains(head, "✦ 👀 alice") || strings.Contains(head, ":eyes:") {
+		t.Errorf("line 1 = %q, want the 👀 emoji after the glyph and no :eyes: shortcode", head)
+	}
+	if body := ansi.Strip(l2); strings.Contains(body, "👀") || !strings.HasPrefix(strings.TrimLeft(body, "▌"), "  hello") {
+		t.Errorf("line 2 = %q, want the message alone, two columns in", body)
 	}
 }
 
