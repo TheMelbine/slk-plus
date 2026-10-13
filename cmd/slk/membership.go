@@ -47,7 +47,7 @@ func (h *rtmEventHandler) OnMemberLeft(channelID, userID string) {
 }
 
 // refreshMutedForActive walks wctx.Channels, refreshes each item's
-// IsMuted flag from the current MuteStore, and posts the message
+// IsMuted and IsQuiet flags from the current MuteStore, and posts the message
 // muteRefreshMsg chooses so the UI re-derives whatever it showed from
 // those flags. Mirrors refreshSectionsForActive but for the mute
 // dimension.
@@ -65,6 +65,7 @@ func (h *rtmEventHandler) refreshMutedForActive() {
 				chID, h.wsCtx.Channels[i].Name, before, after)
 		}
 		h.wsCtx.Channels[i].IsMuted = after
+		h.wsCtx.Channels[i].IsQuiet = store.IsQuiet(chID)
 	}
 	if h.program == nil {
 		return

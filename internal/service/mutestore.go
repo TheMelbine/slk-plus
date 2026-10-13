@@ -103,6 +103,17 @@ func (s *MuteStore) DesktopLevel(channelID string) string {
 	return s.prefs[channelID].Desktop
 }
 
+// IsQuiet reports whether the channel's desktop notification level asks
+// for less than every message ("mentions_dms" or "nothing"). The sidebar
+// shows unread traffic in such a channel without the unread dot.
+func (s *MuteStore) IsQuiet(channelID string) bool {
+	switch s.DesktopLevel(channelID) {
+	case "mentions_dms", "nothing":
+		return true
+	}
+	return false
+}
+
 // MutedChannels returns a snapshot of every channel ID currently
 // recorded as muted. Empty when the store is not ready. The returned
 // slice is a copy and safe to mutate.

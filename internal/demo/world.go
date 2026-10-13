@@ -39,6 +39,7 @@ type (
 		dmUserID               string
 		unread                 int // trailing top-level messages not yet read
 		mentions               int
+		quiet                  bool // notification level "mentions_dms" or "nothing"
 		msgs                   []msgSpec
 	}
 	msgSpec struct {
@@ -76,6 +77,7 @@ type channel struct {
 	replies                map[string][]core.MessageItem // parent TS -> replies, ascending TS
 	lastRead               string
 	mentions               int
+	quiet                  bool
 }
 
 type team struct {
@@ -113,7 +115,7 @@ func newWorld(specs []teamSpec, now time.Time, clock func() time.Time) *World {
 		for _, cs := range ts.channels {
 			c := &channel{id: cs.id, name: cs.name, typ: cs.typ, section: cs.section,
 				sectionOrder: cs.sectionOrder, dmUserID: cs.dmUserID, teamID: t.id,
-				replies: map[string][]core.MessageItem{}, mentions: cs.mentions}
+				replies: map[string][]core.MessageItem{}, mentions: cs.mentions, quiet: cs.quiet}
 			for _, ms := range cs.msgs {
 				parent := w.fixtureItem(t, ms, now)
 				for _, rs := range ms.replies {
@@ -617,7 +619,7 @@ func (t *team) snapshot() teamSnapshot {
 	for _, c := range t.channels {
 		s.channels = append(s.channels, sidebar.ChannelItem{
 			ID: c.id, Name: c.name, Type: c.typ, Section: c.section, SectionOrder: c.sectionOrder,
-			DMUserID: c.dmUserID, Presence: presence[c.dmUserID],
+			DMUserID: c.dmUserID, Presence: presence[c.dmUserID], IsQuiet: c.quiet,
 		})
 		s.finder = append(s.finder, core.ChannelFinderItem{
 			ID: c.id, Name: c.name, Type: c.typ, Presence: presence[c.dmUserID], Joined: true,
@@ -676,6 +678,9 @@ func (w *World) cycleNotifyLevel(ch string) string {
 		next = "everything"
 	}
 	w.notifyLevels[ch] = next
+	if c := w.byID[ch]; c != nil {
+		c.quiet = next != "everything"
+	}
 	return next
 }
 

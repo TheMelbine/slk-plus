@@ -268,3 +268,20 @@ func TestMuteStore_DesktopLevel(t *testing.T) {
 		t.Errorf("same payload should report changed=false")
 	}
 }
+
+func TestMuteStore_IsQuiet(t *testing.T) {
+	s := NewMuteStore()
+	c := &fakeMutedClient{prefs: map[string]slk.ChannelNotifyPrefs{
+		"C1": {Desktop: "mentions_dms"},
+		"C2": {Desktop: "nothing"},
+		"C3": {Desktop: "everything"},
+	}}
+	if err := s.Bootstrap(context.Background(), c); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	for id, want := range map[string]bool{"C1": true, "C2": true, "C3": false, "C4": false} {
+		if got := s.IsQuiet(id); got != want {
+			t.Errorf("IsQuiet(%s)=%v, want %v", id, got, want)
+		}
+	}
+}

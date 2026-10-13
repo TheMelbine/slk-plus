@@ -95,6 +95,15 @@ var (
 			Bold(true).
 			Padding(0, 1)
 
+	// ChannelQuietUnread is the style for an unread channel whose Slack
+	// notification level is "mentions_dms" or "nothing": the full text
+	// colour so new messages are visible, but no bold, because the user
+	// asked this channel not to call for attention.
+	ChannelQuietUnread = lipgloss.NewStyle().
+				Background(Background).
+				Foreground(TextPrimary).
+				Padding(0, 1)
+
 	// ChannelMuted is the style for muted channels in the sidebar.
 	// Always uses the dim sidebar foreground (no bold) regardless of
 	// unread state — Slack treats muted channels as background noise,
@@ -462,6 +471,8 @@ func buildStyles() {
 		Background(SidebarBackground).Foreground(SidebarTextMuted).Padding(0, 1)
 	ChannelUnread = lipgloss.NewStyle().
 		Background(SidebarBackground).Foreground(SidebarText).Bold(true).Padding(0, 1)
+	ChannelQuietUnread = lipgloss.NewStyle().
+		Background(SidebarBackground).Foreground(SidebarText).Padding(0, 1)
 	ChannelMuted = lipgloss.NewStyle().
 		Background(SidebarBackground).Foreground(SidebarTextMuted).Padding(0, 1)
 	UnreadBadge = lipgloss.NewStyle().

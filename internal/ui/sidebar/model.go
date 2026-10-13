@@ -78,6 +78,13 @@ type ChannelItem struct {
 	//
 	// Sourced from service.MuteStore in buildChannelItem.
 	IsMuted bool
+	// IsQuiet reports that the channel's Slack notification level is
+	// "mentions_dms" or "nothing". Unread traffic in a quiet channel
+	// gets no dot and no bold: the name only switches to the full text
+	// colour. Mentions still badge, as on muted rows.
+	//
+	// Sourced from service.MuteStore.IsQuiet in buildChannelItem.
+	IsQuiet bool
 }
 
 // IsVisiblyUnread reports whether this channel should render the unread
@@ -88,7 +95,14 @@ type ChannelItem struct {
 //
 // Scoped to the dot deliberately: mentions pierce mute. See MentionBadge.
 func (item ChannelItem) IsVisiblyUnread(state core.ReadState) bool {
-	return state.HasUnread && !item.IsMuted
+	return state.HasUnread && !item.IsMuted && !item.IsQuiet
+}
+
+// IsQuietlyUnread reports whether a quiet (but not muted) channel has
+// unread messages. Such a row renders in the full text colour without the
+// dot or bold that IsVisiblyUnread rows get.
+func (item ChannelItem) IsQuietlyUnread(state core.ReadState) bool {
+	return state.HasUnread && item.IsQuiet && !item.IsMuted
 }
 
 // MentionBadge reports the direct-mention count to render on this row, or
@@ -1916,12 +1930,13 @@ func (m *Model) buildCache(width int) {
 		// reset the bright sidebar fg back in and the trailing name
 		// renders visibly brighter than read public channels which
 		// have no inline ANSI in their prefix at all.
+		quietUnread := item.IsQuietlyUnread(readState[item.ID])
 		boldAttr := ""
 		if hasUnread {
 			boldAttr = "\x1b[1m"
 		}
 		normalFg := messages.SidebarMutedFgANSI()
-		if hasUnread {
+		if hasUnread || quietUnread {
 			normalFg = messages.SidebarFgANSI()
 		}
 		normalAttrs := messages.SidebarBgANSI() + normalFg + boldAttr
@@ -1940,6 +1955,8 @@ func (m *Model) buildCache(width int) {
 			baseStyle = styles.ChannelMuted
 		case hasUnread:
 			baseStyle = styles.ChannelUnread
+		case quietUnread:
+			baseStyle = styles.ChannelQuietUnread
 		default:
 			baseStyle = styles.ChannelNormal
 		}

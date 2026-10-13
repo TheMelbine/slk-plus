@@ -9,6 +9,7 @@ A fork of [slk](https://github.com/gammons/slk) by Grant Ammons with changes I w
 **Notifications**
 
 - Per-channel notification levels from Slack are honored (all new messages / mentions only / nothing), and `m` cycles them without leaving the terminal
+- A channel set to mentions only or nothing has no unread dot in the sidebar: its name turns brighter when something new arrives, and a mention still shows a badge. Such channels don't count toward section and tab-title unread totals, and `a`/`A` skip them
 - `f` follows or unfollows a thread, with desktop notifications for replies in followed threads
 - macOS: notifications carry the app icon and the sender's avatar, and a click brings back slk's Ghostty tab and opens the message or its thread, switching workspace if needed. `macos/notifier/build.sh` builds and installs the helper app once
 

@@ -92,9 +92,10 @@ func buildChannelItem(ch slack.Channel, wctx *WorkspaceContext, cfg config.Confi
 		}
 	}
 
-	muted := false
+	muted, quiet := false, false
 	if wctx.MuteStore != nil {
 		muted = wctx.MuteStore.IsMuted(ch.ID)
+		quiet = wctx.MuteStore.IsQuiet(ch.ID)
 	}
 
 	item := sidebar.ChannelItem{
@@ -105,6 +106,7 @@ func buildChannelItem(ch slack.Channel, wctx *WorkspaceContext, cfg config.Confi
 		SectionOrder: sectionOrder,
 		ChannelOrder: channelOrder,
 		IsMuted:      muted,
+		IsQuiet:      quiet,
 	}
 	if ch.IsIM {
 		item.DMUserID = ch.User

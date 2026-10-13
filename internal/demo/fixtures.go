@@ -147,7 +147,7 @@ func lumenLabs() teamSpec {
 				{user: uTom, ago: 50 * hr, text: "INC-207 resolved. Queue backlog cleared, postmortem on Thursday.",
 					reactions: []reactSpec{reacts("pray", uPriya, uSam)}},
 			}},
-			{id: chDesign, name: "design", typ: "channel", section: "Company", sectionOrder: 2, unread: 1, msgs: []msgSpec{
+			{id: chDesign, name: "design", typ: "channel", section: "Company", sectionOrder: 2, unread: 1, quiet: true, msgs: []msgSpec{
 				{user: uMaya, ago: 23 * hr, text: "New onboarding illustrations are up in Figma :art:"},
 				{user: uMaya, ago: 70 * mn, text: "Signups by week since the new onboarding flow shipped :chart_with_upwards_trend:",
 					attachments: []core.Attachment{chartAttachment()},
