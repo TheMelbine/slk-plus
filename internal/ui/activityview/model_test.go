@@ -3,8 +3,10 @@ package activityview
 import (
 	"image/color"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
@@ -27,8 +29,8 @@ func TestActivityGlyph(t *testing.T) {
 		"channel":                  "@",
 		"thread_v2":                "⚑",
 		"message_reaction":         "✦",
-		"dm":                       "●",
-		"bot_dm_bundle":            "●",
+		"dm":                       "→",
+		"bot_dm_bundle":            "→",
 		"something_unknown":        "•",
 		"":                         "•",
 	}
@@ -223,11 +225,12 @@ func fgBefore(t *testing.T, line, word string) string {
 
 // The preview is the message itself, rendered like everywhere else in
 // slk: emoji shortcodes become emoji, channel references resolve, and the
-// text is in the normal text colour rather than the muted metadata one.
+// text of an unread card is in the normal text colour rather than the
+// muted metadata one.
 func TestRenderCard_PreviewRendersSlackMarkup(t *testing.T) {
 	m := New(map[string]string{"U1": "alice"}, "")
 	m.SetChannelNames(map[string]string{"C1": "general", "C9": "hiring"})
-	it := core.ActivityItem{Type: "at_user", ChannelID: "C1", TS: "1.1", AuthorID: "U1"}
+	it := core.ActivityItem{Type: "at_user", ChannelID: "C1", TS: "1.1", AuthorID: "U1", IsUnread: true}
 	m.SetItems([]core.ActivityItem{it})
 	m.SetBodies(map[string]core.ActivityMessage{
 		core.ActivityMsgKey("C1", "1.1"): {Text: ":wave: hello see <#C9>", UserID: "U1"},
@@ -412,7 +415,8 @@ func TestContextLabel(t *testing.T) {
 
 // The context names the conversation the way the rest of slk does: "#"
 // only for public channels, "◆" for private ones, "●" for group DMs, and
-// just "DM" for a 1:1 DM (the other person is already on the card).
+// nothing for a 1:1 DM (the other person is already on the card). The
+// glyph carries the item type, so there is no "Mention in" verb.
 func TestContextLabel_ByConversationType(t *testing.T) {
 	m := New(nil, "")
 	m.SetChannelNames(map[string]string{
@@ -424,11 +428,11 @@ func TestContextLabel_ByConversationType(t *testing.T) {
 	cases := []struct {
 		name, typ, ch, want string
 	}{
-		{"public channel", "at_user", "C1", "Mention in #general"},
-		{"private channel", "at_user", "G1", "Mention in ◆ secret"},
-		{"1:1 DM", "message_reaction", "D1", "Reacted in DM"},
-		{"group DM", "at_user", "M1", "Mention in ● Pav, Grant Ammons, Tom Hudson"},
-		{"unknown type falls back to #", "at_user", "CX", "Mention in #CX"},
+		{"public channel", "at_user", "C1", "#general"},
+		{"private channel", "at_user", "G1", "◆ secret"},
+		{"1:1 DM", "message_reaction", "D1", ""},
+		{"group DM", "at_user", "M1", "● Pav, Grant Ammons, Tom Hudson"},
+		{"unknown type falls back to #", "at_user", "CX", "#CX"},
 	}
 	for _, c := range cases {
 		got := ansi.Strip(m.contextLabel(core.ActivityItem{Type: c.typ, ChannelID: c.ch}))
@@ -453,7 +457,7 @@ func TestRenderCard_DMHeadedByConversation(t *testing.T) {
 		{"latest from them", "U1", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			it := core.ActivityItem{Type: "dm", ChannelID: "D1", TS: "1.1"}
+			it := core.ActivityItem{Type: "dm", ChannelID: "D1", TS: "1.1", IsUnread: true}
 			m.SetItems([]core.ActivityItem{it})
 			m.SetBodies(map[string]core.ActivityMessage{
 				core.ActivityMsgKey("D1", "1.1"): {Text: "thanks", UserID: c.from},
@@ -560,5 +564,77 @@ func TestPatchUserName_RecordsNameInOwnMap(t *testing.T) {
 	m.PatchUserName("U1", "alice")
 	if !strings.Contains(m.View(20, 60), "alice") {
 		t.Error("View does not show the patched name")
+	}
+}
+
+// A read card is muted as a whole; an unread one keeps the text colour.
+// That contrast is what tells the user where to look first.
+func TestRenderCard_ReadCardIsMuted(t *testing.T) {
+	m := New(map[string]string{"U1": "alice"}, "")
+	m.SetChannelNames(map[string]string{"C1": "general"})
+	m.SetBodies(map[string]core.ActivityMessage{
+		core.ActivityMsgKey("C1", "1.1"): {Text: "hello", UserID: "U1"},
+	})
+	text, muted := fgOf(t, styles.TextPrimary), fgOf(t, styles.TextMuted)
+	for _, c := range []struct {
+		unread bool
+		want   string
+	}{{false, muted}, {true, text}} {
+		it := core.ActivityItem{Type: "at_user", ChannelID: "C1", TS: "1.1", AuthorID: "U1", IsUnread: c.unread}
+		l1, l2 := m.renderCard(it, 80, false)
+		if got := fgBefore(t, l2, "hello"); got != c.want {
+			t.Errorf("unread=%v body colour = %s, want %s", c.unread, got, c.want)
+		}
+		if got := fgBefore(t, l1, "alice"); got != c.want {
+			t.Errorf("unread=%v author colour = %s, want %s", c.unread, got, c.want)
+		}
+		if strings.Contains(ansi.Strip(l1), "●") {
+			t.Errorf("line 1 still carries an unread dot: %q", ansi.Strip(l1))
+		}
+	}
+}
+
+// In the preview only a mention of you keeps the highlight; other
+// people's mentions read as plain text.
+func TestRenderCard_OnlySelfMentionHighlighted(t *testing.T) {
+	m := New(map[string]string{"U1": "alice", "U2": "bob", "UME": "Dan"}, "UME")
+	m.SetChannelNames(map[string]string{"C1": "general"})
+	it := core.ActivityItem{Type: "at_user", ChannelID: "C1", TS: "1.1", AuthorID: "U1", IsUnread: true}
+	m.SetBodies(map[string]core.ActivityMessage{
+		core.ActivityMsgKey("C1", "1.1"): {Text: "<@U2> <@UME> look", UserID: "U1"},
+	})
+	_, l2 := m.renderCard(it, 80, false)
+	text, accent := fgOf(t, styles.TextPrimary), fgOf(t, styles.Primary)
+	if got := fgBefore(t, l2, "@bob"); got != text {
+		t.Errorf("@bob colour = %s, want plain text %s", got, text)
+	}
+	if got := fgBefore(t, l2, "@Dan"); got != accent {
+		t.Errorf("@Dan colour = %s, want the mention accent %s", got, accent)
+	}
+}
+
+func TestFormatRelTime_Short(t *testing.T) {
+	ts := strconv.FormatInt(time.Now().Add(-7*time.Minute).Unix(), 10) + ".0"
+	if got := formatRelTime(ts); got != "7m" {
+		t.Errorf("formatRelTime(7m ago) = %q, want 7m", got)
+	}
+}
+
+// The gap before the first card of an older day is a date divider.
+func TestView_DayDividerBetweenDays(t *testing.T) {
+	now := time.Now()
+	ts := func(t time.Time) string { return strconv.FormatInt(t.Unix(), 10) + ".0" }
+	m := New(nil, "")
+	m.SetItems([]core.ActivityItem{
+		{Key: "a", Type: "at_user", ChannelID: "C1", TS: "1.1", FeedTS: ts(now)},
+		{Key: "b", Type: "at_user", ChannelID: "C1", TS: "1.2", FeedTS: ts(now)},
+		{Key: "c", Type: "at_user", ChannelID: "C1", TS: "1.3", FeedTS: ts(now.AddDate(0, 0, -3))},
+	})
+	lines := strings.Split(ansi.Strip(m.View(20, 60)), "\n")
+	if strings.Contains(lines[2], "──") {
+		t.Errorf("same-day gap shows a divider: %q", lines[2])
+	}
+	if !strings.Contains(lines[5], "──") {
+		t.Errorf("gap before an older day has no divider: %q", lines[5])
 	}
 }

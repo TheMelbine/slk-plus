@@ -600,6 +600,12 @@ func FgANSI() string {
 	return cachedFgANSI
 }
 
+// MutedFgANSI is like FgANSI but for the theme's muted text color, for
+// rows drawn dim as a whole (a read Activity card).
+func MutedFgANSI() string {
+	return fgANSIFor(styles.TextMuted)
+}
+
 // SidebarFgANSI is like FgANSI but for the sidebar's primary text color.
 func SidebarFgANSI() string {
 	fg := styles.SidebarText
@@ -657,6 +663,12 @@ type RenderSlackMarkdownOpts struct {
 	// one. 0 leaves the old behaviour (block as wide as its longest
 	// line, ragged right edge).
 	Width int
+
+	// SelfUserID, when set, keeps the mention highlight for <@SelfUserID>
+	// only: other user mentions render as plain "@name" in the
+	// surrounding text colour. Lists that should point the eye at you
+	// (Activity) set it; the message pane leaves it empty.
+	SelfUserID string
 }
 
 // RenderSlackMarkdown converts Slack-flavored markdown and emoji shortcodes
@@ -868,6 +880,9 @@ func renderInlineFormattingWith(text string, opts RenderSlackMarkdownOpts) strin
 			if resolved, ok := userNames[userID]; ok {
 				name = resolved
 			}
+		}
+		if opts.SelfUserID != "" && userID != opts.SelfUserID {
+			return "@" + name
 		}
 		return mentionStyle().Render("@" + name)
 	})

@@ -45,14 +45,21 @@ func bodyStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(styles.TextPrimary)
 }
 
-func unreadDotStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
-}
-
-// channelNameStyle themes the channel name so it stays readable on light
-// themes, mirroring the sidebar's "channel link" convention.
-func channelNameStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
+// glyphStyle colours the leading type glyph. A read card keeps it muted
+// with the rest of the card; an unread one gets the type's colour, so the
+// column of glyphs shows at a glance what is new and what kind it is.
+func glyphStyle(itemType string, unread bool) lipgloss.Style {
+	if !unread {
+		return mutedStyle()
+	}
+	c := styles.Primary // mentions and DMs: someone is talking to you
+	switch itemType {
+	case "thread_v2":
+		c = styles.Accent
+	case "message_reaction":
+		c = styles.Warning
+	}
+	return lipgloss.NewStyle().Foreground(c).Bold(true)
 }
 
 // thickLeftBorder mirrors the messages/threadsview convention: a 1-column
@@ -514,6 +521,13 @@ func (m *Model) renderLines(start, end, width int) []string {
 			}
 		}
 		if sep := base + cardContentLines; i < len(m.items)-1 && sep >= start && sep < end {
+			// The gap before the first card of an older day carries its
+			// date, so the feed reads in days without changing the
+			// stride the windowing and click math rely on.
+			if day := messages.DateFromTS(m.items[i+1].FeedTS); day != "" && day != messages.DateFromTS(m.items[i].FeedTS) {
+				out = append(out, dayLine(messages.FormatDateSeparator(day), width))
+				continue
+			}
 			if separator == "" {
 				separator = blankLine(width)
 			}
@@ -523,6 +537,14 @@ func (m *Model) renderLines(start, end, width int) []string {
 	return out
 }
 
+// dayLine returns a muted, centred "── label ──" divider exactly `width`
+// columns wide.
+func dayLine(label string, width int) string {
+	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).
+		Background(styles.Background).Foreground(styles.TextMuted).
+		Render("── " + label + " ──")
+}
+
 // blankLine returns an exactly `width`-column-wide empty line.
 func blankLine(width int) string {
 	return lipgloss.NewStyle().Width(width).Render("")
@@ -530,14 +552,16 @@ func blankLine(width int) string {
 
 // renderCard returns the two lines for one activity item:
 //
-//	<glyph> <author>  <Verb> in #<channel>              <relTime> [●]
+//	<glyph> <author> · <channel>                        <relTime>
 //	  <body preview>            (reactions prefix the :emoji:)
 //
-// Line 1 is author-first with a natural-language context ("Mention in
-// #x" / "Thread in #x" / "Reacted in #x" / "DM"), mirroring the desktop
-// Activity feed; line 2 is the hydrated message body (empty until the
-// messages.list fetch lands). Selection is a green left border (▌) on
-// both lines; unread items get a trailing dot on line 1.
+// The glyph carries the item type (see activityGlyph), so line 1 has no
+// "Mention in" / "Thread in" words. An unread card is drawn in the full
+// text colour with a coloured glyph and a bold author; a read card is
+// muted as a whole, so the eye lands on what is new. Line 2 is the
+// hydrated message body (empty until the messages.list fetch lands), and
+// only a mention of you keeps the mention highlight in it. Selection is
+// a green left border (▌) on both lines.
 func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (string, string) {
 	contentWidth := width - 1
 	if contentWidth < 1 {
@@ -563,13 +587,18 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 		}
 	}
 
-	left := activityGlyph(it.Type) + " "
+	textStyle, nameStyle, fg := mutedStyle(), mutedStyle(), messages.MutedFgANSI()
+	if it.IsUnread {
+		textStyle, nameStyle, fg = bodyStyle(), authorStyle(), messages.FgANSI()
+	}
+
+	left := glyphStyle(it.Type, it.IsUnread).Render(activityGlyph(it.Type)) + " "
 	if author != "" {
-		left += authorStyle().Render(author)
+		left += nameStyle.Render(author)
 	}
 	if ctx := m.contextLabel(it); ctx != "" {
 		if author != "" {
-			left += "  "
+			left += mutedStyle().Render(" · ")
 		}
 		left += ctx
 	}
@@ -577,18 +606,12 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	if rel := formatRelTime(it.FeedTS); rel != "" {
 		right = mutedStyle().Render(rel)
 	}
-	if it.IsUnread {
-		if right != "" {
-			right += " "
-		}
-		right += unreadDotStyle().Render("●")
-	}
 	line1 := layoutLine(left, right, contentWidth)
 
 	// Render the body the way the Threads view and message pane do, then
 	// fold it onto one line: a card has exactly cardContentLines lines,
 	// so a newline in the message would desync the windowing/click math.
-	opts := messages.RenderSlackMarkdownOpts{UserNames: m.userNames, ChannelNames: m.channelNames}
+	opts := messages.RenderSlackMarkdownOpts{UserNames: m.userNames, ChannelNames: m.channelNames, SelfUserID: m.selfUserID}
 	preview := ""
 	if body.Text != "" {
 		preview = messages.RenderSlackMarkdownWith(body.Text, opts)
@@ -612,38 +635,34 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	}
 	line2 := "  "
 	if isDMItem(it.Type) && preview != "" && m.selfUserID != "" && body.UserID == m.selfUserID {
-		// Outside bodyStyle: its closing reset would drop the body's
+		// Outside textStyle: its closing reset would drop the body's
 		// text colour.
 		line2 += mutedStyle().Render("You: ")
 	}
-	line2 += bodyStyle().Render(preview)
+	line2 += textStyle.Render(preview)
 
-	return m.wrapLine(line1, contentWidth, selected), m.wrapLine(line2, contentWidth, selected)
+	return m.wrapLine(line1, contentWidth, selected, fg), m.wrapLine(line2, contentWidth, selected, fg)
 }
 
-// contextLabel renders the natural-language activity context for line 1:
-// "Mention in #ch" / "Thread in #ch" / "Reacted in #ch" / "DM" (no channel
-// for DMs). Empty for unknown types.
+// contextLabel names the conversation for line 1, muted: "#ch" for a
+// public channel, the slk glyph plus name for private channels and group
+// DMs. Empty for a DM item and for anything in a 1:1 DM (the other person
+// is already on the card), and for unknown item types.
 func (m *Model) contextLabel(it core.ActivityItem) string {
-	verb := contextVerb(it.Type)
-	if verb == "" {
+	if contextVerb(it.Type) == "" || isDMItem(it.Type) {
 		return ""
-	}
-	if isDMItem(it.Type) {
-		return mutedStyle().Render(verb)
 	}
 	ch := m.resolveChannel(it.ChannelID)
 	if ch == "" {
-		return mutedStyle().Render(verb)
+		return ""
 	}
 	switch chType := m.channelTypes[it.ChannelID]; chType {
 	case "dm":
-		// The other person is already on the card as the author.
-		return mutedStyle().Render(verb + " in DM")
+		return ""
 	case "private", "group_dm":
-		return mutedStyle().Render(verb+" in ") + channelNameStyle().Render(messages.ChannelGlyph(chType)+" "+ch)
+		return mutedStyle().Render(messages.ChannelGlyph(chType) + " " + ch)
 	default:
-		return mutedStyle().Render(verb+" in ") + channelNameStyle().Render("#"+ch)
+		return mutedStyle().Render("#" + ch)
 	}
 }
 
@@ -670,9 +689,10 @@ func contextVerb(itemType string) string {
 	}
 }
 
-// authorStyle renders the actor name in bold so it anchors the card.
+// authorStyle renders the actor name of an unread card in bold so it
+// anchors the card.
 func authorStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Bold(true)
+	return lipgloss.NewStyle().Foreground(styles.TextPrimary).Bold(true)
 }
 
 // layoutLine places `right` flush against the right edge of a width-column
@@ -694,15 +714,16 @@ func layoutLine(left, right string, width int) string {
 // wrapLine clips a rendered line to contentWidth and applies the selection
 // border + background fill (shared by both card lines so selection spans
 // the whole card).
-func (m *Model) wrapLine(line string, contentWidth int, selected bool) string {
+func (m *Model) wrapLine(line string, contentWidth int, selected bool, fg string) string {
 	line = clipToWidth(line, contentWidth)
-	// Each styled span ends in a reset that drops the row's background;
-	// restore it so the row is filled edge to edge.
+	// Each styled span ends in a reset that drops the row's background
+	// and text colour; restore both so the row is filled edge to edge and
+	// text after a span keeps the card's colour.
 	bg := messages.BgANSI()
 	if selected {
 		bg = messages.SelectionTintBgANSI(m.focused)
 	}
-	line = messages.ReapplyBgAfterResets(line, bg)
+	line = messages.ReapplyBgAfterResets(line, bg+fg)
 	borderStyle := borderInvisStyle()
 	fill := borderFillStyle().Width(contentWidth)
 	if selected {
@@ -716,7 +737,8 @@ func (m *Model) wrapLine(line string, contentWidth int, selected bool) string {
 
 // activityGlyph returns the leading glyph for a row keyed on the item type:
 // "@" for mentions, the sidebar's thread flag for thread replies, a star
-// for reactions, and the sidebar's DM dot for DMs. Each is one column wide
+// for reactions, and an arrow for DMs (not a dot: the dot means presence
+// and unread elsewhere). Each is one column wide
 // and has no colour-emoji form, so terminals agree on its width. Pure (no
 // styling) so it can be unit-tested.
 func activityGlyph(itemType string) string {
@@ -729,7 +751,7 @@ func activityGlyph(itemType string) string {
 	case "message_reaction":
 		return "✦"
 	case "dm", "bot_dm_bundle":
-		return "●"
+		return "→"
 	default:
 		return "•"
 	}
@@ -774,7 +796,7 @@ func (m *Model) resolveUser(uid string) string {
 }
 
 // formatRelTime parses a Slack-style "1700000000.000000" timestamp and
-// returns a coarse "Nm ago" / "Nh ago" / "Nd ago" string. Empty /
+// returns a coarse "Nm" / "Nh" / "Nd" string. Empty /
 // unparseable inputs return "".
 func formatRelTime(ts string) string {
 	if ts == "" {
@@ -793,11 +815,11 @@ func formatRelTime(ts string) string {
 	case d < time.Minute:
 		return "now"
 	case d < time.Hour:
-		return strconv.Itoa(int(d/time.Minute)) + "m ago"
+		return strconv.Itoa(int(d/time.Minute)) + "m"
 	case d < 24*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + "h ago"
+		return strconv.Itoa(int(d/time.Hour)) + "h"
 	default:
-		return strconv.Itoa(int(d/(24*time.Hour))) + "d ago"
+		return strconv.Itoa(int(d/(24*time.Hour))) + "d"
 	}
 }
 
