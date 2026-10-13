@@ -50,9 +50,9 @@ func summary(unread bool) cache.ThreadSummary {
 	}
 }
 
-// Line 1 is the flag, the author and the channel with the time of the
-// last reply on the right; line 3 is the reply count. An unread card has
-// a coloured flag and a bold author in the text colour.
+// Line 1 is the flag, the author, the channel and the reply count with
+// the time of the last reply on the right; line 2 is the parent text. An
+// unread card has a coloured flag and a bold author in the text colour.
 func TestRenderCard_UnreadLayout(t *testing.T) {
 	m := New(map[string]string{"U1": "alice", "U2": "bob", "UME": "Dan"}, "UME")
 	s := summary(true)
@@ -62,11 +62,11 @@ func TestRenderCard_UnreadLayout(t *testing.T) {
 		t.Fatalf("card has %d lines, want %d", len(lines), cardContentLines)
 	}
 	l1 := ansi.Strip(lines[0])
-	if !strings.HasPrefix(l1, "▌⚑ alice · #general") || !strings.HasSuffix(l1, "7m") {
-		t.Errorf("line 1 = %q, want '⚑ alice · #general … 7m'", l1)
+	if !strings.HasPrefix(l1, "▌⚑ alice · #general · 3 replies · last by bob") || !strings.HasSuffix(l1, "7m") {
+		t.Errorf("line 1 = %q, want '⚑ alice · #general · 3 replies · last by bob … 7m'", l1)
 	}
-	if l3 := ansi.Strip(lines[2]); !strings.Contains(l3, "3 replies · last by bob") {
-		t.Errorf("line 3 = %q", l3)
+	if l2 := ansi.Strip(lines[1]); !strings.HasPrefix(l2, "▌  hello world") {
+		t.Errorf("line 2 = %q, want the parent text", l2)
 	}
 	if got, want := fgBefore(t, lines[0], "⚑"), fgOf(t, styles.Accent); got != want {
 		t.Errorf("unread flag colour = %s, want Accent %s", got, want)
@@ -118,7 +118,7 @@ func TestRenderCard_OnlySelfMentionHighlighted(t *testing.T) {
 
 // With an avatar renderer each card leads with the parent author's
 // avatar; a still-loading avatar keeps its blank slot so cards stay
-// aligned, and the footer row under the avatar is blank too.
+// aligned.
 func TestRenderCard_AvatarColumn(t *testing.T) {
 	m := New(map[string]string{"U1": "alice"}, "UME")
 	m.SetAvatarFunc(func(uid string) string {
@@ -133,9 +133,6 @@ func TestRenderCard_AvatarColumn(t *testing.T) {
 	}
 	if got := ansi.Strip(lines[1]); !strings.HasPrefix(got, "▌bbbb ") {
 		t.Errorf("line 2 = %q, want the avatar's second row", got)
-	}
-	if got := ansi.Strip(lines[2]); !strings.HasPrefix(got, "▌       3 replies") {
-		t.Errorf("line 3 = %q, want a blank slot under the avatar", got)
 	}
 	s := summary(true)
 	s.ParentUserID = "U3"
@@ -171,10 +168,10 @@ func TestView_DayDividerBetweenDays(t *testing.T) {
 		{ChannelID: "C1", ThreadTS: "1.3", ParentText: "c", LastReplyTS: ts(now.AddDate(0, 0, -3))},
 	})
 	lines := strings.Split(ansi.Strip(m.View(20, 60)), "\n")
-	if strings.Contains(lines[3], "──") {
-		t.Errorf("same-day gap shows a divider: %q", lines[3])
+	if strings.Contains(lines[2], "──") {
+		t.Errorf("same-day gap shows a divider: %q", lines[2])
 	}
-	if !strings.Contains(lines[7], "──") {
-		t.Errorf("gap before an older day has no divider: %q", lines[7])
+	if !strings.Contains(lines[5], "──") {
+		t.Errorf("gap before an older day has no divider: %q", lines[5])
 	}
 }

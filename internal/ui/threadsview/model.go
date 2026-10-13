@@ -25,7 +25,7 @@ import (
 // last card has no trailing separator, so the last card occupies
 // cardContentLines lines instead.
 const (
-	cardContentLines = 3 // header + preview + footer
+	cardContentLines = 2 // header + preview
 	cardStride       = cardContentLines + 1
 )
 
@@ -359,8 +359,8 @@ func (m *Model) ViewportAtTop() bool {
 // on the blank-fill region past the last card, and for negative rowY.
 //
 // Layout reference: the body is rendered by renderLines which emits
-// cardContentLines (3) rows per card with one blank separator row between
-// adjacent cards — so cardStride is 4 and card i starts at absolute line
+// cardContentLines (2) rows per card with one blank separator row between
+// adjacent cards — so cardStride is 3 and card i starts at absolute line
 // i*cardStride. When subscriptionsAvailable=false, View prepends a single
 // banner row above the body, so rowY=0 is the banner and the body starts
 // at rowY=1. yOffset is added to rowY (after banner adjustment) to map
@@ -589,7 +589,7 @@ func (m *Model) View(height, width int) string {
 	return bannerLine + "\n" + body
 }
 
-// snapToSelected adjusts yOffset so the entire selected card (3 content
+// snapToSelected adjusts yOffset so the entire selected card (2 content
 // lines) is inside the viewport. The selected card occupies absolute lines
 // [start, start+cardContentLines) inside the flat line list. If the card
 // is taller than `height`, prefer pinning its top edge to the viewport top.
@@ -685,17 +685,16 @@ func channelLabel(s core.ThreadSummary) string {
 	}
 }
 
-// renderCard returns the three lines of one thread card:
+// renderCard returns the two lines of one thread card:
 //
-//	⚑ <author> · <channel>                    <time of the last reply>
+//	⚑ <author> · <channel> · N replies · last by <user>   <last reply time>
 //	  <parent text>
-//	  N replies · last by <user>
 //
 // led by the parent author's avatar when a renderer is set. An unread
 // card is drawn in the full text colour with a coloured flag and a bold
 // author; a read card is muted as a whole, so the eye lands on what is
 // new. Only a mention of you keeps the mention highlight in the preview.
-// Selection is a left border (▌) on all three lines.
+// Selection is a left border (▌) on both lines.
 func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []string {
 	// The left border occupies 1 column; content fills the remainder.
 	contentWidth := width - 1 - card.AvatarWidthOf(m.avatarFn)
@@ -716,7 +715,10 @@ func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []str
 	if author := m.resolveUser(s.ParentUserID); author != "" {
 		left += nameStyle.Render(author) + card.Muted().Render(" · ")
 	}
-	left += card.Muted().Render(channelLabel(s))
+	left += card.Muted().Render(channelLabel(s) + " · " + replyCount(s))
+	if lastBy := m.resolveUser(s.LastReplyBy); lastBy != "" {
+		left += card.Muted().Render(" · last by " + lastBy)
+	}
 	right := ""
 	if rel := card.RelTime(s.LastReplyTS); rel != "" {
 		right = card.Muted().Render(rel)
@@ -755,20 +757,17 @@ func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []str
 	}
 	line2 := "  " + preview
 
-	replyWord := "replies"
-	if s.ReplyCount == 1 {
-		replyWord = "reply"
-	}
-	footer := "  " + strconv.Itoa(s.ReplyCount) + " " + replyWord
-	if lastBy := m.resolveUser(s.LastReplyBy); lastBy != "" {
-		footer += " · last by " + lastBy
-	}
-	line3 := card.Muted().Render(footer)
-
 	w := contentWidth + card.AvatarWidthOf(m.avatarFn)
 	return []string{
 		card.WrapLine(avatarCol[0]+line1, w, selected, m.focused, fg),
 		card.WrapLine(avatarCol[1]+line2, w, selected, m.focused, fg),
-		card.WrapLine(avatarCol[2]+line3, w, selected, m.focused, fg),
 	}
+}
+
+// replyCount is "N replies" / "1 reply".
+func replyCount(s core.ThreadSummary) string {
+	if s.ReplyCount == 1 {
+		return "1 reply"
+	}
+	return strconv.Itoa(s.ReplyCount) + " replies"
 }

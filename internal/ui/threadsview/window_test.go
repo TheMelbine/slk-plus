@@ -107,7 +107,7 @@ func TestView_MatchesUnwindowedReference(t *testing.T) {
 		{"bottom", func(m *Model) { m.GoToBottom() }},
 		{"top", func(m *Model) { m.GoToTop() }},
 	}
-	// Heights straddle a card boundary (3 content lines, stride 4) and
+	// Heights straddle a card boundary (2 content lines, stride 3) and
 	// include viewports taller than the whole list (n<=10 at h=40).
 	for _, n := range []int{1, 2, 10, 57} {
 		for _, height := range []int{1, 3, 4, 7, 40} {

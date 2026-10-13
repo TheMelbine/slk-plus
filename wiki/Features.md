@@ -66,10 +66,11 @@ See [[Terminal Compatibility|Terminal-Compatibility]] for which protocol your te
   thread you authored, replied to, or were @-mentioned in for the active
   workspace. Unread first, then newest activity. Selecting a thread opens
   it in the side panel; the list re-ranks live as new replies arrive.
-  Each card leads with the parent author's avatar and shows the author,
-  the channel, the time of the last reply, the parent text and the reply
-  count; read threads are dimmed, unread ones keep full colour with a
-  coloured flag, and days are separated by a date divider.
+  Each card is two lines led by the parent author's avatar: the author,
+  the channel, the reply count and who replied last, with the time of the
+  last reply on the right, then the parent text. Read threads are dimmed,
+  unread ones keep full colour with a coloured flag, and days are
+  separated by a date divider.
   v1 is computed from the local SQLite cache, so threads from channels
   you have not yet opened in slk will not appear until they are seen.
 

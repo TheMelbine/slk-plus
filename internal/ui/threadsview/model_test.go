@@ -175,8 +175,8 @@ func TestView_SnapsToSelectedOnOverflow(t *testing.T) {
 	}
 	m.SetSummaries(summaries)
 
-	// Total content lines = 10*3 + 9 separators = 39. With height=10 the
-	// viewport holds ~2.5 cards. Walk cursor far enough that without
+	// Total content lines = 10*2 + 9 separators = 29. With height=10 the
+	// viewport holds ~3 cards. Walk cursor far enough that without
 	// snapping, the selected card sits below the initial yOffset=0 window.
 	// Args: height=10, width=40.
 	for i := 0; i < 6; i++ {
@@ -442,22 +442,22 @@ func TestView_BannerVisibleWithSummaries(t *testing.T) {
 	}
 }
 
-// TestClickAt_SelectsCardOnCardRow guards Bug B: clicking on any of
-// the three rows of a thread card must move the selection cursor to
-// that card and return true so the caller can follow up with
-// openSelectedThreadCmd. Layout is cardStride=4 (3 content rows +
-// 1 separator row); card 0 occupies rows [0,1,2], separator at row
-// 3, card 1 at rows [4,5,6], separator at row 7, card 2 at [8,9,10].
+// TestClickAt_SelectsCardOnCardRow guards Bug B: clicking on either
+// row of a thread card must move the selection cursor to that card and
+// return true so the caller can follow up with openSelectedThreadCmd.
+// Layout is cardStride=3 (2 content rows + 1 separator row); card 0
+// occupies rows [0,1], separator at row 2, card 1 at rows [3,4],
+// separator at row 5, card 2 at [6,7].
 func TestClickAt_SelectsCardOnCardRow(t *testing.T) {
 	m := New(map[string]string{}, "USELF")
 	m.SetSummaries(sampleSummaries())
 
-	// Click row 5 — middle row of card 1. Should select card 1.
-	if !m.ClickAt(5) {
-		t.Fatal("ClickAt(5) returned false; want true (row inside card 1)")
+	// Click row 4 — second row of card 1. Should select card 1.
+	if !m.ClickAt(4) {
+		t.Fatal("ClickAt(4) returned false; want true (row inside card 1)")
 	}
 	if got := m.SelectedIndex(); got != 1 {
-		t.Errorf("after ClickAt(5) SelectedIndex = %d, want 1", got)
+		t.Errorf("after ClickAt(4) SelectedIndex = %d, want 1", got)
 	}
 
 	// Click row 0 — first row of card 0. Should select card 0.
@@ -476,9 +476,9 @@ func TestClickAt_SeparatorRowIsNoop(t *testing.T) {
 	m.SetSummaries(sampleSummaries())
 	m.MoveDown() // selected = 1
 
-	// Row 3 is the separator between card 0 and card 1.
-	if m.ClickAt(3) {
-		t.Fatal("ClickAt(3) returned true on separator row; want false")
+	// Row 2 is the separator between card 0 and card 1.
+	if m.ClickAt(2) {
+		t.Fatal("ClickAt(2) returned true on separator row; want false")
 	}
 	if got := m.SelectedIndex(); got != 1 {
 		t.Errorf("separator click should not move selection; got %d, want 1", got)
@@ -491,7 +491,7 @@ func TestClickAt_SeparatorRowIsNoop(t *testing.T) {
 func TestClickAt_OutOfRangeIsNoop(t *testing.T) {
 	m := New(map[string]string{}, "USELF")
 	m.SetSummaries(sampleSummaries())
-	// Two cards: last card occupies up to row 6 (card 1 = rows 4,5,6).
+	// Two cards: last card occupies up to row 4 (card 1 = rows 3,4).
 	// Row 50 is well past the list.
 	if m.ClickAt(50) {
 		t.Errorf("ClickAt(50) returned true; want false (past last card)")
@@ -542,38 +542,31 @@ func TestClickAt_AccountsForYOffset(t *testing.T) {
 		{ChannelID: "C3", ChannelName: "g3", ThreadTS: "3.0", ParentText: "c", LastReplyTS: "4.0", LastReplyBy: "U2"},
 	}
 	m.SetSummaries(sums)
-	// 3 cards = 11 flat lines; viewport height = 5 forces snap to
+	// 3 cards = 8 flat lines; viewport height = 5 forces snap to
 	// scroll once we move past card 0.
 	m.MoveDown()
 	m.MoveDown() // selected = 2 (last card)
 	_ = m.View(5, 80)
 
 	// yOffset is now non-zero (snapped to keep card 2 visible).
-	// Card 2 starts at absolute line 8 with cardContentLines=3, so
-	// to fit content end (line 10) inside a 5-row viewport,
-	// yOffset = end - height = 11 - 5 = 6. Within the viewport,
-	// card 2's first row is at viewport row 8 - 6 = 2.
-	if !m.ClickAt(2) {
-		t.Fatalf("ClickAt(2) on card 2 (with yOffset=%d) returned false; want true", m.yOffset)
+	// Card 2 starts at absolute line 6 with cardContentLines=2, so
+	// to fit content end (line 8) inside a 5-row viewport,
+	// yOffset = end - height = 8 - 5 = 3. Within the viewport,
+	// card 2's first row is at viewport row 6 - 3 = 3.
+	if !m.ClickAt(3) {
+		t.Fatalf("ClickAt(3) on card 2 (with yOffset=%d) returned false; want true", m.yOffset)
 	}
 	if got := m.SelectedIndex(); got != 2 {
-		t.Errorf("ClickAt(2) with yOffset set: SelectedIndex = %d, want 2", got)
+		t.Errorf("ClickAt(3) with yOffset set: SelectedIndex = %d, want 2", got)
 	}
 
-	// And the rowY=0 click should select card 1 (whose first row is
-	// at absolute line 4, which maps to viewport row 4 - 6 = -2 —
-	// so actually card 1 is OFF-screen; rowY=0 corresponds to
-	// absolute line yOffset + 0 = 6, which lies inside card 1's
-	// separator/footer region. Let's check by computing the actual
-	// row mapping using cardStride math:
-	//   absLine = yOffset + 0 = 6
-	//   6 % 4 = 2 (< cardContentLines=3) → card row
-	//   idx = 6 / 4 = 1 → card 1, row 2 (footer)
+	// rowY=0 is absolute line yOffset + 0 = 3, the first row of card 1
+	// (3 % 3 = 0 < cardContentLines, 3 / 3 = 1).
 	if !m.ClickAt(0) {
-		t.Fatalf("ClickAt(0) at yOffset=%d returned false; want true (card 1 footer)", m.yOffset)
+		t.Fatalf("ClickAt(0) at yOffset=%d returned false; want true (card 1)", m.yOffset)
 	}
 	if got := m.SelectedIndex(); got != 1 {
-		t.Errorf("ClickAt(0) at yOffset=6 should select card 1; got %d", got)
+		t.Errorf("ClickAt(0) at yOffset=3 should select card 1; got %d", got)
 	}
 }
 

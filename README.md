@@ -28,7 +28,7 @@ A fork of [slk](https://github.com/gammons/slk) by Grant Ammons with changes I w
 **Rendering**
 
 - Avatars in the thread panel, on the thread line (participants + "last reply N ago") and in the `@` mention picker
-- Threads view cards read like the Activity feed: the parent author's avatar, read threads dimmed and unread ones in full colour with a coloured flag and a bold author, the channel muted, only mentions of you highlighted in the preview, the last reply's time short (`7m`) on the right, and a date divider between days
+- Threads view cards read like the Activity feed: two lines per thread led by the parent author's avatar (author, channel, reply count and who replied last, then the parent text), read threads dimmed and unread ones in full colour with a coloured flag and a bold author, only mentions of you highlighted in the preview, the last reply's time short (`7m`) on the right, and a date divider between days
 - Activity feed is easier to scan: each item leads with the author's avatar (the other person's for a DM), a reaction shows its emoji next to the glyph, read items are dimmed and unread ones keep full colour with a type-coloured glyph, the "Mention in" / "Thread in" words are gone (the glyph says it), the channel is muted, only mentions of you are highlighted in the preview, times are short (`7m`), and older days get a date divider
 - Emoji and links render inside alert attachments
 - Theme color `"none"` for a transparent background, author name colors in themes
