@@ -28,7 +28,7 @@ A fork of [slk](https://github.com/gammons/slk) by Grant Ammons with changes I w
 **Rendering**
 
 - Avatars in the thread panel, on the thread line (participants + "last reply N ago") and in the `@` mention picker
-- Activity feed is easier to scan: read items are dimmed and unread ones keep full colour with a type-coloured glyph, the "Mention in" / "Thread in" words are gone (the glyph says it), the channel is muted, only mentions of you are highlighted in the preview, times are short (`7m`), and older days get a date divider
+- Activity feed is easier to scan: each item leads with the author's avatar (the other person's for a DM), read items are dimmed and unread ones keep full colour with a type-coloured glyph, the "Mention in" / "Thread in" words are gone (the glyph says it), the channel is muted, only mentions of you are highlighted in the preview, times are short (`7m`), and older days get a date divider
 - Emoji and links render inside alert attachments
 - Theme color `"none"` for a transparent background, author name colors in themes
 - Kitty graphics fixes for Ghostty

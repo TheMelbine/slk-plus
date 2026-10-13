@@ -2632,6 +2632,7 @@ func (a *App) SetChannels(items []sidebar.ChannelItem) {
 	picks := make([]channelpicker.Channel, 0, len(items))
 	names := make(map[string]string, len(items))
 	types := make(map[string]string, len(items))
+	dmUsers := map[string]string{}
 	for _, ch := range items {
 		// Skip entries with empty names (defensive -- they'd never
 		// match a typed query and would clutter the empty-query view).
@@ -2645,6 +2646,9 @@ func (a *App) SetChannels(items []sidebar.ChannelItem) {
 		})
 		names[ch.ID] = ch.Name
 		types[ch.ID] = ch.Type
+		if ch.DMUserID != "" {
+			dmUsers[ch.ID] = ch.DMUserID
+		}
 	}
 	a.compose.SetChannels(picks)
 	a.threadCompose.SetChannels(picks)
@@ -2656,6 +2660,7 @@ func (a *App) SetChannels(items []sidebar.ChannelItem) {
 	a.threadsView.SetChannelNames(names)
 	a.activityView.SetChannelNames(names)
 	a.activityView.SetChannelTypes(types)
+	a.activityView.SetDMUsers(dmUsers)
 }
 
 // SetChannelService wires the App's ChannelService collaborator
@@ -2798,6 +2803,7 @@ func (a *App) SetAvatarService(s core.AvatarService) {
 		m.SetMiniAvatarFunc(mini)
 	}
 	a.threadPanel.SetAvatarFunc(fn)
+	a.activityView.SetAvatarFunc(fn)
 	var pickerFn mentionpicker.AvatarFunc
 	if mini != nil {
 		pickerFn = mentionpicker.AvatarFunc(mini)

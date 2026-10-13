@@ -638,3 +638,68 @@ func TestView_DayDividerBetweenDays(t *testing.T) {
 		t.Errorf("gap before an older day has no divider: %q", lines[5])
 	}
 }
+
+// With an avatar renderer each card leads with the actor's avatar, a DM
+// card with the other person's, and a still-loading avatar keeps its
+// blank slot so the cards stay aligned.
+func TestRenderCard_AvatarColumn(t *testing.T) {
+	m := New(map[string]string{"U1": "alice", "UME": "Dan"}, "UME")
+	m.SetChannelNames(map[string]string{"C1": "general", "D1": "Bob"})
+	m.SetChannelTypes(map[string]string{"C1": "channel", "D1": "dm"})
+	m.SetDMUsers(map[string]string{"D1": "U2"})
+	m.SetAvatarFunc(func(uid string) string {
+		if uid == "U3" {
+			return "" // loading
+		}
+		return strings.ToUpper(uid[:2]) + "AA\n" + "bbbb"
+	})
+
+	l1, l2 := m.renderCard(core.ActivityItem{Type: "at_user", ChannelID: "C1", TS: "1.1", AuthorID: "U1"}, 60, false)
+	if got := ansi.Strip(l1); !strings.Contains(got, "U1AA @ alice") {
+		t.Errorf("line 1 = %q, want the avatar before the glyph", got)
+	}
+	if got := ansi.Strip(l2); !strings.Contains(got, "bbbb") {
+		t.Errorf("line 2 = %q, want the avatar's second row", got)
+	}
+
+	l1, _ = m.renderCard(core.ActivityItem{Type: "dm", ChannelID: "D1", TS: "1.2"}, 60, false)
+	if got := ansi.Strip(l1); !strings.Contains(got, "U2AA") {
+		t.Errorf("DM line 1 = %q, want the other person's avatar", got)
+	}
+
+	l1, _ = m.renderCard(core.ActivityItem{Type: "at_user", ChannelID: "C1", TS: "1.3", AuthorID: "U3"}, 60, false)
+	if got := ansi.Strip(l1); !strings.Contains(got, "▌     @ U3") {
+		t.Errorf("loading avatar line 1 = %q, want a blank 5-column slot", got)
+	}
+	for _, line := range []string{l1, l2} {
+		if w := lipgloss.Width(line); w != 60 {
+			t.Errorf("card line width = %d, want 60", w)
+		}
+	}
+}
+
+// Bold text and text after a styled span stay muted on a read card: the
+// renderer re-applies the theme text colour, which must not leak through.
+func TestRenderCard_ReadCardMutesSpans(t *testing.T) {
+	m := New(map[string]string{"U1": "alice", "UME": "Dan"}, "UME")
+	it := core.ActivityItem{Type: "at_user", ChannelID: "C1", TS: "1.1", AuthorID: "U1"}
+	m.SetBodies(map[string]core.ActivityMessage{
+		core.ActivityMsgKey("C1", "1.1"): {Text: "<@UME> tail *bold* after", UserID: "U1"},
+	})
+	_, l2 := m.renderCard(it, 80, false)
+	muted := fgOf(t, styles.TextMuted)
+	for _, word := range []string{"tail", "bold", "after"} {
+		if got := fgBefore(t, l2, word); got != muted {
+			t.Errorf("%q colour = %s, want muted %s", word, got, muted)
+		}
+	}
+}
+
+func TestRecolorSGR(t *testing.T) {
+	from, to := "\x1b[38;2;1;2;3m", "\x1b[38;2;9;9;9m"
+	in := "\x1b[38;2;1;2;3ma\x1b[1;38;2;1;2;3mb\x1b[38;2;4;5;6mc\x1b[m"
+	want := "\x1b[38;2;9;9;9ma\x1b[1;38;2;9;9;9mb\x1b[38;2;4;5;6mc\x1b[m"
+	if got := recolorSGR(in, from, to); got != want {
+		t.Errorf("recolorSGR = %q, want %q", got, want)
+	}
+}

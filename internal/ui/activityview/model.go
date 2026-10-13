@@ -89,6 +89,12 @@ type Model struct {
 	channelNames map[string]string
 	channelTypes map[string]string
 	selfUserID   string
+	// dmUsers maps a 1:1 DM channel ID to the other person's user ID, so
+	// a DM card can show their avatar.
+	dmUsers map[string]string
+	// avatarFn renders a user's 4x2 avatar; "" while it loads. Nil means
+	// no avatar column at all.
+	avatarFn messages.AvatarFunc
 
 	// bodies holds hydrated message text/author for each item ref,
 	// keyed by core.ActivityMsgKey(channelID, ts). Filled by SetBodies
@@ -197,6 +203,35 @@ func (m *Model) SetChannelNames(names map[string]string) {
 		return
 	}
 	m.channelNames = names
+	m.dirty()
+}
+
+// SetAvatarFunc installs the avatar renderer. Cards get an avatar column
+// once it is set.
+func (m *Model) SetAvatarFunc(fn messages.AvatarFunc) {
+	m.avatarFn = fn
+	m.dirty()
+}
+
+// SetDMUsers replaces the DM channel id -> other user id map used for the
+// avatar on DM cards. No-op when content-equal to the current one.
+func (m *Model) SetDMUsers(users map[string]string) {
+	if users == nil {
+		users = map[string]string{}
+	}
+	if stringMapsEqual(m.dmUsers, users) {
+		return
+	}
+	m.dmUsers = users
+	m.dirty()
+}
+
+// HandleAvatarReady re-renders the feed once a lazily fetched avatar has
+// landed. Empty userID is a no-op.
+func (m *Model) HandleAvatarReady(userID string) {
+	if userID == "" || m.avatarFn == nil {
+		return
+	}
 	m.dirty()
 }
 
@@ -587,6 +622,33 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 		}
 	}
 
+	// The avatar column: the actor's face, or for a DM the other
+	// person's. A loading avatar keeps its blank slot so cards stay
+	// aligned.
+	avatarUserID := authorID
+	if isDMItem(it.Type) {
+		if uid := m.dmUsers[it.ChannelID]; uid != "" {
+			avatarUserID = uid
+		}
+	}
+	var avatarCol [cardContentLines]string
+	if m.avatarFn != nil {
+		contentWidth -= avatarColWidth
+		lines := []string{}
+		if avatarUserID != "" {
+			if av := m.avatarFn(avatarUserID); av != "" {
+				lines = strings.Split(av, "\n")
+			}
+		}
+		for i := range avatarCol {
+			if i < len(lines) {
+				avatarCol[i] = lines[i] + " "
+			} else {
+				avatarCol[i] = strings.Repeat(" ", avatarColWidth)
+			}
+		}
+	}
+
 	textStyle, nameStyle, fg := mutedStyle(), mutedStyle(), messages.MutedFgANSI()
 	if it.IsUnread {
 		textStyle, nameStyle, fg = bodyStyle(), authorStyle(), messages.FgANSI()
@@ -628,6 +690,12 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	// here (the message pane does the same via styles.MessageText). Only
 	// the foreground: a background would paint over the selection tint.
 	preview = strings.ReplaceAll(preview, "\n", " ")
+	if !it.IsUnread {
+		// The renderer re-applies the theme text colour after each span
+		// and gives bold/italic an explicit one; a read card wants all of
+		// that plain text muted.
+		preview = recolorSGR(preview, messages.FgANSI(), messages.MutedFgANSI())
+	}
 	if selected {
 		// The renderer restores the theme background after each styled
 		// span; on the selected card that must be the selection tint.
@@ -641,7 +709,71 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	}
 	line2 += textStyle.Render(preview)
 
-	return m.wrapLine(line1, contentWidth, selected, fg), m.wrapLine(line2, contentWidth, selected, fg)
+	line2 = clipToWidth(line2, contentWidth)
+	return m.wrapLine(avatarCol[0]+line1, contentWidth+avatarWidthOf(m.avatarFn), selected, fg),
+		m.wrapLine(avatarCol[1]+line2, contentWidth+avatarWidthOf(m.avatarFn), selected, fg)
+}
+
+// avatarColWidth is the avatar (4 columns) plus a one-column gap.
+const avatarColWidth = 5
+
+func avatarWidthOf(fn messages.AvatarFunc) int {
+	if fn == nil {
+		return 0
+	}
+	return avatarColWidth
+}
+
+// recolorSGR swaps one foreground colour for another in every SGR escape
+// of s, including combined ones like "\x1b[1;38;2;r;g;bm". from and to are
+// full escapes as messages.FgANSI returns them.
+func recolorSGR(s, from, to string) string {
+	fromP, toP := sgrParams(from), sgrParams(to)
+	if len(fromP) == 0 || len(toP) == 0 || from == to {
+		return s
+	}
+	var b strings.Builder
+	for {
+		i := strings.Index(s, "\x1b[")
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		j := strings.IndexByte(s[i+2:], 'm')
+		if j < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		j += i + 2
+		params := strings.Split(s[i+2:j], ";")
+		b.WriteString(s[:i])
+		b.WriteString("\x1b[")
+		b.WriteString(strings.Join(replaceRun(params, fromP, toP), ";"))
+		b.WriteByte('m')
+		s = s[j+1:]
+	}
+}
+
+func sgrParams(esc string) []string {
+	if !strings.HasPrefix(esc, "\x1b[") || !strings.HasSuffix(esc, "m") {
+		return nil
+	}
+	return strings.Split(esc[2:len(esc)-1], ";")
+}
+
+// replaceRun replaces each run of params equal to from with to.
+func replaceRun(params, from, to []string) []string {
+	out := make([]string, 0, len(params))
+	for i := 0; i < len(params); {
+		if i+len(from) <= len(params) && slices.Equal(params[i:i+len(from)], from) {
+			out = append(out, to...)
+			i += len(from)
+			continue
+		}
+		out = append(out, params[i])
+		i++
+	}
+	return out
 }
 
 // contextLabel names the conversation for line 1, muted: "#ch" for a
