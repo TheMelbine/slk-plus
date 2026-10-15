@@ -387,6 +387,30 @@ func TestNormalModeKeys(t *testing.T) {
 			},
 		},
 
+		{
+			// The Activity view draws no channel compose, like the
+			// Threads view: with a thread open from it, `i` must land
+			// in the thread compose even though the activity list is
+			// the focused panel. Otherwise typing goes into the hidden
+			// channel compose and nothing appears on screen.
+			name: "i in the Activity view with a thread open focuses the thread compose",
+			opts: append(normalOpts(), withView(ViewActivity)),
+			setup: func(t *testing.T, a *App) {
+				a.threadVisible = true
+				a.focusedPanel = PanelMessages
+			},
+			key:      keyPress('i'),
+			wantMode: ModeInsert,
+			assert: func(t *testing.T, a *App, cmd tea.Cmd) {
+				if a.focusedPanel != PanelThread {
+					t.Errorf("focusedPanel = %v, want PanelThread", a.focusedPanel)
+				}
+				if cmd == nil {
+					t.Error("cmd = nil, want threadCompose.Focus()'s cmd")
+				}
+			},
+		},
+
 		// -------------------------------------------------------------
 		// Arm 2: CommandMode `:` (mode_normal.go:70)
 		// -------------------------------------------------------------

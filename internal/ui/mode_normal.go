@@ -95,15 +95,14 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key.Matches(msg, a.keys.InsertMode):
 		a.SetMode(ModeInsert)
-		// In the Threads view there is no main compose box -- the
-		// only way to type is into the right-side thread panel's
-		// compose. Force focus there even when the threads list
-		// itself was the focused panel. Same for a stacked, narrow
-		// layout where the thread is the only content pane drawn
-		// (e.g. focus on the sidebar): typing must land where the
-		// user can see it, not in a channel compose hidden behind
-		// the thread.
-		if a.focusedPanel == PanelThread || (a.view == ViewThreads && a.threadVisible) || a.threadDrawnAlone() {
+		// The Threads and Activity views draw no main compose box --
+		// the only way to type is into the right-side thread panel's
+		// compose. Force focus there even when the list itself was
+		// the focused panel. Same for a stacked, narrow layout where
+		// the thread is the only content pane drawn (e.g. focus on
+		// the sidebar): typing must land where the user can see it,
+		// not in a channel compose hidden behind the thread.
+		if a.focusedPanel == PanelThread || (a.view != ViewChannels && a.threadVisible) || a.threadDrawnAlone() {
 			a.focusedPanel = PanelThread
 			return a.threadCompose.Focus()
 		}
