@@ -1,6 +1,8 @@
 // internal/ui/mode.go
 package ui
 
+import "github.com/gammons/slk/internal/locale"
+
 type Mode int
 
 const (
@@ -57,42 +59,42 @@ func (m Mode) IsModalOverlay() bool {
 func (m Mode) String() string {
 	switch m {
 	case ModeNormal:
-		return "NORMAL"
+		return locale.T("NORMAL")
 	case ModeInsert:
-		return "INSERT"
+		return locale.T("INSERT")
 	case ModeCommand:
-		return "COMMAND"
+		return locale.T("COMMAND")
 	case ModeSearch:
-		return "SEARCH"
+		return locale.T("SEARCH")
 	case ModeChannelFinder:
-		return "FIND"
+		return locale.T("FIND")
 	case ModeReactionPicker:
-		return "REACT"
+		return locale.T("REACT")
 	case ModeWorkspaceFinder:
-		return "WORKSPACE"
+		return locale.T("WORKSPACE")
 	case ModeThemeSwitcher:
-		return "THEME"
+		return locale.T("THEME")
 	case ModePresenceMenu:
-		return "STATUS"
+		return locale.T("STATUS")
 	case ModePresenceCustomSnooze:
-		return "STATUS-INPUT"
+		return locale.T("STATUS-INPUT")
 	case ModeConfirm:
-		return "CONFIRM"
+		return locale.T("CONFIRM")
 	case ModeHelp:
-		return "HELP"
+		return locale.T("HELP")
 	case ModeNewMessage:
-		return "NEW MSG"
+		return locale.T("NEW MSG")
 	case ModeReactionsView:
-		return "REACTIONS"
+		return locale.T("REACTIONS")
 	case ModeLinkPicker:
-		return "LINKS"
+		return locale.T("LINKS")
 	case ModeWorkspaceSearch:
-		return "WS-SEARCH"
+		return locale.T("WS-SEARCH")
 	case ModeUserProfile:
-		return "PROFILE"
+		return locale.T("PROFILE")
 	case ModeMarks:
-		return "MARKS"
+		return locale.T("MARKS")
 	default:
-		return "UNKNOWN"
+		return locale.T("UNKNOWN")
 	}
 }

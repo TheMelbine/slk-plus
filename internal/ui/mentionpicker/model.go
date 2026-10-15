@@ -2,6 +2,7 @@ package mentionpicker
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"sort"
 	"strings"
 
@@ -261,9 +262,9 @@ func (m *Model) View(width int) string {
 		var suffix string
 		switch {
 		case !u.InChannel:
-			suffix = " (not in channel)"
+			suffix = locale.T(" (not in channel)")
 		case u.IsExternal:
-			suffix = " (ext)"
+			suffix = locale.T(" (ext)")
 		}
 		if suffix != "" {
 			row += lipgloss.NewStyle().Foreground(styles.TextMuted).Render(suffix)

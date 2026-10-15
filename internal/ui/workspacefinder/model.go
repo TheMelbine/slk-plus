@@ -1,6 +1,7 @@
 package workspacefinder
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -238,12 +239,12 @@ func (m Model) renderBox(termWidth int) string {
 	}
 
 	f := chrome.Frame{
-		Title: "Switch Workspace",
-		Input: chrome.FilterInput(s, m.query, "Type to filter..."),
+		Title: locale.T("Switch Workspace"),
+		Input: chrome.FilterInput(s, m.query, locale.T("Type to filter...")),
 		Body:  list.Rows(s, m.selected, rows),
 	}
 	if m.query != "" {
-		f.Empty = "No matching workspaces"
+		f.Empty = locale.T("No matching workspaces")
 	}
 	return f.Render(s, overlayWidth)
 }

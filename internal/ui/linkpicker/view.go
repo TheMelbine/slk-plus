@@ -1,6 +1,7 @@
 package linkpicker
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -75,6 +76,6 @@ func (m *Model) renderBox(termWidth int) string {
 	return chrome.Frame{
 		Title:  m.title,
 		Body:   list.Rows(s, m.selected, rows),
-		Footer: s.Footer.Render("j/k move   enter select   esc/q close"),
+		Footer: s.Footer.Render(locale.T("j/k move   enter select   esc/q close")),
 	}.Render(s, overlayWidth)
 }

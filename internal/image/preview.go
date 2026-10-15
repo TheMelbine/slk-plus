@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"image"
 	"strings"
 
@@ -321,9 +322,9 @@ func (p *Preview) View(width, height int, proto Protocol) string {
 		b.WriteByte('\n')
 	}
 
-	hintText := "Esc/q close  •  Enter open in system viewer"
+	hintText := locale.T("Esc/q close  •  Enter open in system viewer")
 	if p.sibCount > 1 {
-		hintText = "h/\u2190 prev  •  l/\u2192 next  •  " + hintText
+		hintText = "h/\u2190 " + locale.T("prev") + "  •  l/\u2192 " + locale.T("next") + "  •  " + hintText
 	}
 	hint := lipgloss.NewStyle().Faint(true).Render(hintText)
 	b.WriteString(hint)
@@ -347,9 +348,9 @@ func (p *Preview) viewLoading(width, height int) string {
 	}
 
 	frame := previewSpinnerFrames[p.loadingFrame%len(previewSpinnerFrames)]
-	loadingMsg := fmt.Sprintf("%s  Loading %s...", string(frame), p.name)
+	loadingMsg := fmt.Sprintf(locale.T("%s  Loading %s..."), string(frame), p.name)
 	if w := lipgloss.Width(loadingMsg); w > width {
-		loadingMsg = fmt.Sprintf("%s  Loading...", string(frame))
+		loadingMsg = fmt.Sprintf(locale.T("%s  Loading..."), string(frame))
 	}
 	loadingStyle := lipgloss.NewStyle().Faint(true)
 	rendered := loadingStyle.Render(loadingMsg)
@@ -377,9 +378,9 @@ func (p *Preview) viewLoading(width, height int) string {
 		}
 		b.WriteByte('\n')
 	}
-	hintText := "Esc/q close"
+	hintText := locale.T("Esc/q close")
 	if p.sibCount > 1 {
-		hintText = "h/\u2190 prev  •  l/\u2192 next  •  " + hintText
+		hintText = "h/\u2190 " + locale.T("prev") + "  •  l/\u2192 " + locale.T("next") + "  •  " + hintText
 	}
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render(hintText))
 	return b.String()

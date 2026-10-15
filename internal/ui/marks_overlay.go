@@ -7,6 +7,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"time"
 
@@ -59,7 +60,7 @@ func (a *App) refreshMarksOverlay() tea.Cmd {
 	rows, err := a.marksRows()
 	a.marksOverlay.SetRows(rows)
 	if err != nil {
-		return toastWithClear(a, "Failed to load saved marks", 3*time.Second)
+		return toastWithClear(a, locale.T("Failed to load saved marks"), 3*time.Second)
 	}
 	return nil
 }

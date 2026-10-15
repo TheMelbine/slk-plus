@@ -3,6 +3,7 @@ package thread
 import (
 	"bytes"
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"math"
 	"slices"
 	"strings"
@@ -1001,7 +1002,7 @@ func (m *Model) viewInternal(height, width int, applySelection bool) string {
 			Height(height).
 			Background(styles.Background).
 			Foreground(styles.TextMuted).
-			Render("No thread selected")
+			Render(locale.T("No thread selected"))
 	}
 
 	// Chrome: header + separator + parent message + separator. Cached
@@ -1152,7 +1153,7 @@ func (m *Model) viewInternal(height, width int, applySelection bool) string {
 			Height(emptyHeight).
 			Background(styles.Background).
 			Foreground(styles.TextMuted).
-			Render("No replies yet")
+			Render(locale.T("No replies yet"))
 		m.list.SetEntries([]entrylist.Entry{parent, {Ref: -1, Lines: strings.Split(empty, "\n")}}, width, false)
 		rows := m.list.Compose(m.list.Static(), "", "", false)
 		return fitHeight(chrome+"\n"+strings.Join(rows, "\n"), height)
@@ -1248,7 +1249,7 @@ func (m *Model) viewInternal(height, width int, applySelection bool) string {
 			Foreground(styles.Error).
 			Bold(true).
 			Align(lipgloss.Center).
-			Render("── new ──")
+			Render("── " + locale.T("new") + " ──")
 	}
 	dateSeparatorStyle := lipgloss.NewStyle().
 		Width(width).

@@ -8,6 +8,7 @@ package ui
 
 import (
 	"errors"
+	"github.com/gammons/slk/internal/locale"
 	"os"
 	"strings"
 	"time"
@@ -46,7 +47,7 @@ type EditorFinishedMsg struct {
 func (a *App) openComposeInEditor() tea.Cmd {
 	if len(a.composeEditor) == 0 {
 		return toastWithClear(a,
-			"No editor configured — set $VISUAL, $EDITOR, or compose.editor in config.toml",
+			locale.T("No editor configured — set $VISUAL, $EDITOR, or compose.editor in config.toml"),
 			4*time.Second)
 	}
 
@@ -59,11 +60,11 @@ func (a *App) openComposeInEditor() tea.Cmd {
 
 	path, err := a.editor.WriteDraft(target.Value())
 	if err != nil {
-		return toastWithClear(a, "Could not open editor: "+err.Error(), 3*time.Second)
+		return toastWithClear(a, locale.T("Could not open editor: ")+err.Error(), 3*time.Second)
 	}
 
 	target.SetEditingExternally(true)
-	target.SetPlaceholderOverride("Editing in $EDITOR — waiting for it to exit...")
+	target.SetPlaceholderOverride(locale.T("Editing in $EDITOR — waiting for it to exit..."))
 	debuglog.General("editor: opening %v for %s", a.composeEditor, path)
 
 	return teaCmd(a.editor.Edit(a.composeEditor, path, func(err error) core.Msg {
@@ -90,12 +91,12 @@ func reduceEditorFinished(a *App, m EditorFinishedMsg) tea.Cmd {
 
 	content, readErr := a.editor.TakeDraft(m.Path)
 	if readErr != nil {
-		return toastWithClear(a, "Editor: could not read draft back: "+readErr.Error(), 3*time.Second)
+		return toastWithClear(a, locale.T("Editor: could not read draft back: ")+readErr.Error(), 3*time.Second)
 	}
 	target.SetValue(strings.TrimRight(content, "\n"))
 
 	if launchFailed {
-		return toastWithClear(a, "Could not open editor: "+m.Err.Error(), 4*time.Second)
+		return toastWithClear(a, locale.T("Could not open editor: ")+m.Err.Error(), 4*time.Second)
 	}
 	return nil
 }

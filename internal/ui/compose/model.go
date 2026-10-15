@@ -3,6 +3,7 @@ package compose
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"image/color"
 	"sort"
 	"strings"
@@ -137,7 +138,7 @@ func (m *Model) dirty() { m.version++ }
 
 // defaultPlaceholder returns the default channel-aware placeholder text.
 func (m *Model) defaultPlaceholder() string {
-	return "Message #" + m.channelName + "... (i to insert)"
+	return fmt.Sprintf(locale.T("Message #%s... (i to insert)"), m.channelName)
 }
 
 // effectivePlaceholder returns the override if set, else the default.
@@ -150,7 +151,7 @@ func (m *Model) effectivePlaceholder() string {
 
 func New(channelName string) Model {
 	ta := textarea.New()
-	ta.Placeholder = "Message #" + channelName + "... (i to insert)"
+	ta.Placeholder = fmt.Sprintf(locale.T("Message #%s... (i to insert)"), channelName)
 	ta.CharLimit = 40000
 	// MaxHeight is the textarea's logical-line cap, which also gates
 	// InsertNewline via atContentLimit(). We want users to be able to

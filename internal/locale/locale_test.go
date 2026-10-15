@@ -67,3 +67,19 @@ func TestEnglishDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestT(t *testing.T) {
+	Set("ru")
+	t.Cleanup(func() { Set("en") })
+	if got := T("Initializing..."); got != "Запуск..." {
+		t.Errorf("T = %q", got)
+	}
+	if got := T("no such string"); got != "no such string" {
+		t.Errorf("untranslated string should pass through, got %q", got)
+	}
+	for k, v := range ru {
+		if v == "" {
+			t.Errorf("empty translation for %q", k)
+		}
+	}
+}

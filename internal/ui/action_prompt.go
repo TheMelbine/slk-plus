@@ -6,6 +6,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strconv"
 	"strings"
 
@@ -136,13 +137,13 @@ func (a *App) actionConfirmChoice(ref actionPromptRef, ba messages.ButtonAction,
 	c := ba.Action.Confirm
 	title, dismiss, ok := c.Title, c.DismissText, c.OKText
 	if title == "" {
-		title = "Are you sure?"
+		title = locale.T("Are you sure?")
 	}
 	if dismiss == "" {
-		dismiss = "Cancel"
+		dismiss = locale.T("Cancel")
 	}
 	if ok == "" {
-		ok = "Okay"
+		ok = locale.T("Okay")
 	}
 	return &confirmprompt.Choice{
 		Title:   title,
@@ -237,11 +238,11 @@ func (a *App) toastActionWaiting(ref actionPromptRef) tea.Cmd {
 		a.promptToasted = map[string]bool{}
 	}
 	a.promptToasted[ref.key()] = true
-	sender := "A message"
+	sender := locale.T("A message")
 	if msg, ok := a.findActionMessage(ref); ok && msg.UserName != "" {
 		sender = msg.UserName
 	}
-	text := sender + ": press b to respond"
+	text := sender + locale.T(": press b to respond")
 	return func() tea.Msg { return ToastMsg{Text: text} }
 }
 
@@ -305,7 +306,7 @@ func (a *App) selectedMessageInFocus() (messages.MessageItem, actionPromptRef, b
 func (a *App) respondToSelected() tea.Cmd {
 	msg, ref, ok := a.selectedMessageInFocus()
 	if !ok || !msg.Ephemeral || !messages.HasButtonActions(msg) || !a.openActionPrompt(ref) {
-		return toastCmd("No buttons on this message")
+		return toastCmd(locale.T("No buttons on this message"))
 	}
 	return nil
 }
@@ -338,7 +339,7 @@ func ephemeralGuard(msg messages.MessageItem) (tea.Cmd, bool) {
 		return nil, false
 	}
 	if messages.HasButtonActions(msg) {
-		return toastCmd("Only visible to you — press b to respond"), true
+		return toastCmd(locale.T("Only visible to you — press b to respond")), true
 	}
-	return toastCmd("Only visible to you"), true
+	return toastCmd(locale.T("Only visible to you")), true
 }

@@ -6,6 +6,8 @@
 package messages
 
 import (
+	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"sort"
 	"strings"
 
@@ -81,9 +83,9 @@ func MessageLinks(msg MessageItem) []Link {
 		if dup {
 			continue
 		}
-		label := "Shared message"
+		label := locale.T("Shared message")
 		if att.AuthorName != "" {
-			label = "Message from " + att.AuthorName
+			label = fmt.Sprintf(locale.T("Message from %s"), att.AuthorName)
 		}
 		out = append(out, Link{URL: att.FromURL, Label: label})
 	}

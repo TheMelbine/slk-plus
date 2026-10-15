@@ -6,6 +6,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"time"
 	"unicode"
@@ -104,7 +105,7 @@ func (a *App) trySlashCommand(panel Panel, c *compose.Model, channelID, threadTS
 		return nil, false
 	}
 	if len(c.Attachments()) > 0 {
-		return toastWithClear(a, "Files can't be sent with a command", 3*time.Second), true
+		return toastWithClear(a, locale.T("Files can't be sent with a command"), 3*time.Second), true
 	}
 	// Translate @name/#name to wire form, as a send does. The name is
 	// untouched by translation, so re-parsing yields the wire-form args.

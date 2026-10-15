@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"regexp"
 	"strconv"
 	"strings"

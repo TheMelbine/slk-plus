@@ -3,6 +3,7 @@ package confirmprompt
 import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/gammons/slk/internal/locale"
 )
 
 // Button is one choice in the prompt.
@@ -57,8 +58,11 @@ func (m Model) button(i int) Button {
 }
 
 // label is button i as drawn: "[hint] label", or "[label]" with no hint.
+// The label is translated here so every caller's buttons follow the
+// display language; locale has no I/O and imports nothing from ui.
 func (m Model) label(i int) string {
 	b := m.button(i)
+	b.Label = locale.T(b.Label)
 	hint := b.Hint
 	if hint == "" {
 		if ks := b.Keys.Keys(); len(ks) > 0 {

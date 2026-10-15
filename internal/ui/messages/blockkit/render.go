@@ -3,6 +3,7 @@
 package blockkit
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"image"
 	"strings"
 
@@ -118,7 +119,7 @@ func appendSection(out *RenderResult, s SectionBlock, ctx Context, width int) {
 	case ImageAccessory:
 		const accRows, accCols = 4, 8
 		if ctx.Fetcher == nil || ctx.Protocol == imgpkg.ProtoOff {
-			label := mutedStyle().Render("[image: " + fallbackAlt(acc.AltText) + "]")
+			label := mutedStyle().Render("[" + locale.T("image") + ": " + fallbackAlt(acc.AltText) + "]")
 			accessoryW = lipgloss.Width(label)
 			accessoryLines = []string{label}
 		} else {
@@ -139,7 +140,7 @@ func appendSection(out *RenderResult, s SectionBlock, ctx Context, width int) {
 				h := hit // copy
 				accessoryHit = &h
 			} else {
-				label := mutedStyle().Render("[image: " + fallbackAlt(acc.AltText) + "]")
+				label := mutedStyle().Render("[" + locale.T("image") + ": " + fallbackAlt(acc.AltText) + "]")
 				accessoryW = lipgloss.Width(label)
 				accessoryLines = []string{label}
 			}
@@ -199,7 +200,7 @@ func appendSection(out *RenderResult, s SectionBlock, ctx Context, width int) {
 // fallbackAlt returns alt or "image" if alt is empty.
 func fallbackAlt(alt string) string {
 	if alt == "" {
-		return "image"
+		return locale.T("image")
 	}
 	return alt
 }
@@ -310,13 +311,13 @@ func renderControlLabel(kind, label string) string {
 	case "button", "workflow_button":
 		text := label
 		if text == "" {
-			text = "Button"
+			text = locale.T("Button")
 		}
 		return controlStyle().Render("[ " + text + " ]")
 	case "static_select", "multi_select":
 		text := label
 		if text == "" {
-			text = "Select"
+			text = locale.T("Select")
 		}
 		return controlStyle().Render(text + " ▾")
 	case "overflow":
@@ -324,21 +325,21 @@ func renderControlLabel(kind, label string) string {
 	case "datepicker":
 		text := label
 		if text == "" {
-			text = "Pick date"
+			text = locale.T("Pick date")
 		}
 		return controlStyle().Render("📅 " + text)
 	case "timepicker":
 		text := label
 		if text == "" {
-			text = "Pick time"
+			text = locale.T("Pick time")
 		}
 		return controlStyle().Render("🕒 " + text)
 	case "radio_buttons":
-		return controlStyle().Render("◯ Options")
+		return controlStyle().Render("◯ " + locale.T("Options"))
 	case "checkboxes":
-		return controlStyle().Render("☐ Options")
+		return controlStyle().Render("☐ " + locale.T("Options"))
 	default:
-		return controlStyle().Render("[ control ]")
+		return controlStyle().Render("[ " + locale.T("control") + " ]")
 	}
 }
 

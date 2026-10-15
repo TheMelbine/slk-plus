@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -47,7 +48,7 @@ func (a *App) forwardToChannel(destination channelfinder.ChannelResult) tea.Cmd 
 	source := *a.pendingForward
 	a.SetMode(ModeNormal)
 	if source.teamID != a.activeTeamID {
-		return func() tea.Msg { return ToastMsg{Text: "Forward cancelled: workspace changed"} }
+		return func() tea.Msg { return ToastMsg{Text: locale.T("Forward cancelled: workspace changed")} }
 	}
 	service := a.messageSvc
 	item := messages.MessageItem{
@@ -62,7 +63,7 @@ func (a *App) forwardToChannel(destination channelfinder.ChannelResult) tea.Cmd 
 		defer cancel()
 		result, err := service.Forward(ctx, source.teamID, source.channelID, source.ts, ids.ChannelID(destination.ID))
 		if err != nil {
-			return ToastMsg{Text: "Failed to forward message: " + err.Error()}
+			return ToastMsg{Text: locale.T("Failed to forward message: ") + err.Error()}
 		}
 		// Match Slack's link mrkdwn so the local fallback is clickable too.
 		item.TS, item.Text = string(result.TS), "<"+result.Text+">"

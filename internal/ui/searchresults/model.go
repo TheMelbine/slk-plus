@@ -6,6 +6,7 @@ package searchresults
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"slices"
 	"strings"
 	"unicode"
@@ -328,7 +329,7 @@ func (m Model) renderBox(termWidth, termHeight int) string {
 	overlayWidth := boxWidth(termWidth)
 	innerWidth := overlayWidth - 4 // border + padding
 
-	input := chrome.FilterInput(s, "", "Type a query, Enter to search...")
+	input := chrome.FilterInput(s, "", locale.T("Type a query, Enter to search..."))
 	if m.query != "" {
 		// Truncate head-side (keep the tail and the cursor visible) so a
 		// long query can't wrap the input line and desync BoxSize. The
@@ -345,7 +346,7 @@ func (m Model) renderBox(termWidth, termHeight int) string {
 	}
 
 	return chrome.Frame{
-		Title: "Search Workspace",
+		Title: locale.T("Search Workspace"),
 		Input: input,
 		Body:  m.bodyLines(innerWidth, termHeight),
 	}.Render(s, overlayWidth)
@@ -361,7 +362,7 @@ func (m Model) bodyLines(innerWidth, termHeight int) []string {
 
 	switch m.st {
 	case stateLoading:
-		return []string{s.Empty.Render("Searching…")}
+		return []string{s.Empty.Render(locale.T("Searching…"))}
 	case stateError:
 		errLine := lipgloss.NewStyle().Background(styles.Background).Foreground(styles.Error).Render(m.errMsg)
 		if lipgloss.Width(errLine) > innerWidth {
@@ -370,7 +371,7 @@ func (m Model) bodyLines(innerWidth, termHeight int) []string {
 		return []string{errLine}
 	case stateResults:
 		if len(m.items) == 0 {
-			return []string{s.Empty.Render("No results")}
+			return []string{s.Empty.Render(locale.T("No results"))}
 		}
 		return m.resultRows(innerWidth, termHeight)
 	default: // stateInput
@@ -517,7 +518,7 @@ func (m Model) resultRows(innerWidth, termHeight int) []string {
 	}
 
 	if m.total > len(m.items) {
-		rows = append(rows, s.Footer.Render(fmt.Sprintf("showing %d of %d", len(m.items), m.total)))
+		rows = append(rows, s.Footer.Render(fmt.Sprintf(locale.T("showing %d of %d"), len(m.items), m.total)))
 	}
 	return rows
 }

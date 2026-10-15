@@ -20,6 +20,7 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/gammons/slk/internal/locale"
 )
 
 func (a *App) renderEarlyFallback() (tea.View, bool) {
@@ -34,7 +35,7 @@ func (a *App) renderEarlyFallback() (tea.View, bool) {
 		// re-renders correctly.
 		screen = a.bootstrap.Render(80, 24, a.spinnerGlyph())
 	} else {
-		screen = "Initializing..."
+		screen = locale.T("Initializing...")
 	}
 	v := tea.NewView(screen)
 	v.AltScreen = true

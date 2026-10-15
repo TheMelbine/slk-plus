@@ -34,6 +34,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -46,7 +47,7 @@ func handleInsertMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		// in-flight caption or send through the other composer. A
 		// single early return covers every key (Esc included),
 		// replacing the former Esc-only guard.
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	if a.editing.IsActive() && key.Matches(msg, a.keys.Escape) {
 		// If a picker is active in the relevant compose, close it

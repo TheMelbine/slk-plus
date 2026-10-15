@@ -1,6 +1,7 @@
 package reactionpicker
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"io"
 	"sort"
 	"strings"
@@ -417,12 +418,12 @@ func (m *Model) renderBox(termWidth int) string {
 	}
 
 	f := chrome.Frame{
-		Title: "Add Reaction",
-		Input: chrome.FilterInput(s, m.query, "Type to filter..."),
+		Title: locale.T("Add Reaction"),
+		Input: chrome.FilterInput(s, m.query, locale.T("Type to filter...")),
 		Body:  win.Rows(s, m.selected, rows),
 	}
 	if m.query != "" {
-		f.Empty = "No matching emoji"
+		f.Empty = locale.T("No matching emoji")
 	}
 	box := f.Render(s, overlayWidth)
 

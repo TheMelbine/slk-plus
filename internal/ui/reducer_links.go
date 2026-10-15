@@ -15,6 +15,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -174,7 +175,7 @@ func (a *App) routeLink(rawURL string) tea.Cmd {
 // reload it.
 func (a *App) applyLocation(loc Location, fromHistory bool) (tea.Cmd, bool) {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second), true
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second), true
 	}
 	name, chType, found := a.channels.Lookup(loc.ChannelID)
 	if !found {

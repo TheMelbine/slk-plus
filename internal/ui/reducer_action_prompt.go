@@ -5,6 +5,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -17,7 +18,7 @@ var reduceActionPrompt reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		if m.err == nil {
 			return nil, true // Slack deletes the ephemeral over the WebSocket
 		}
-		text := fmt.Sprintf("Couldn't send %s: %v", m.label, m.err)
+		text := fmt.Sprintf(locale.T("Couldn't send %s: %v"), m.label, m.err)
 		return func() tea.Msg { return ToastMsg{Text: text} }, true
 	}
 	return nil, false

@@ -19,6 +19,7 @@
 package marks
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -261,8 +262,8 @@ func (m Model) renderBox(termWidth, termHeight int) string {
 	}
 
 	return chrome.Frame{
-		Title: "Marks",
+		Title: locale.T("Marks"),
 		Body:  list.Rows(s, m.selected, rows),
-		Empty: "No marks set",
+		Empty: locale.T("No marks set"),
 	}.Render(s, overlayWidth)
 }

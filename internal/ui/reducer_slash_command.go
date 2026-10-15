@@ -6,6 +6,7 @@ package ui
 
 import (
 	"errors"
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -22,7 +23,7 @@ var reduceSlashCommand reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		if !lookup.found {
-			return a.refuseCommand(lookup.origin, "No channel named #"+lookup.name), true
+			return a.refuseCommand(lookup.origin, locale.T("No channel named #")+lookup.name), true
 		}
 		return a.openChannel(channelResultOf(lookup.item)), true
 	}

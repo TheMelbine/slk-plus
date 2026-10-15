@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"github.com/gammons/slk/internal/ui/styles"
 )
 

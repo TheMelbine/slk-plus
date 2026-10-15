@@ -1,6 +1,7 @@
 package themeswitcher
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"slices"
 	"strings"
 
@@ -245,7 +246,7 @@ func (m Model) renderBox(termWidth int) string {
 	overlayWidth := boxWidth(termWidth)
 	innerWidth := overlayWidth - 4
 
-	titleText := "Switch Theme"
+	titleText := locale.T("Switch Theme")
 	if m.headerText != "" {
 		titleText = m.headerText
 	}
@@ -268,11 +269,11 @@ func (m Model) renderBox(termWidth int) string {
 
 	f := chrome.Frame{
 		Title: titleText,
-		Input: chrome.FilterInput(s, m.query, "Type to filter..."),
+		Input: chrome.FilterInput(s, m.query, locale.T("Type to filter...")),
 		Body:  list.Rows(s, m.selected, rows),
 	}
 	if m.query != "" {
-		f.Empty = "No matching themes"
+		f.Empty = locale.T("No matching themes")
 	}
 	return f.Render(s, overlayWidth)
 }

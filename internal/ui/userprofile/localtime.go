@@ -1,6 +1,7 @@
 package userprofile
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strconv"
 	"time"
 )
@@ -27,7 +28,7 @@ func formatLocalTime(now time.Time, tzOffset int, abbrev string) string {
 // duration like "\u22123h" or "+9h30m" followed by " from you".
 func formatOffsetDelta(deltaSeconds int) string {
 	if deltaSeconds == 0 {
-		return "same time as you"
+		return locale.T("same time as you")
 	}
 	sign := "+"
 	d := deltaSeconds
@@ -41,5 +42,5 @@ func formatOffsetDelta(deltaSeconds int) string {
 	if m != 0 {
 		s += strconv.Itoa(m) + "m"
 	}
-	return sign + s + " from you"
+	return sign + s + locale.T(" from you")
 }

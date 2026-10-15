@@ -3,6 +3,7 @@
 package presencemenu
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"time"
 
@@ -92,19 +93,19 @@ func (m Model) hasEndDNDItem() bool {
 // border to not draw correctly in some terminals.
 func buildItems(presence string, dndActive bool) []item {
 	rows := []item{
-		{label: "Active", action: ActionSetActive, current: presence == "active" && !dndActive},
-		{label: "Away", action: ActionSetAway, current: presence == "away" && !dndActive},
-		{label: "Snooze for 20 minutes", action: ActionSnooze, minutes: 20},
-		{label: "Snooze for 1 hour", action: ActionSnooze, minutes: 60},
-		{label: "Snooze for 2 hours", action: ActionSnooze, minutes: 120},
-		{label: "Snooze for 4 hours", action: ActionSnooze, minutes: 240},
-		{label: "Snooze for 8 hours", action: ActionSnooze, minutes: 480},
-		{label: "Snooze for 24 hours", action: ActionSnooze, minutes: 1440},
-		{label: "Snooze until tomorrow morning", action: ActionSnooze, minutes: minutesUntilTomorrowMorning(time.Now())},
-		{label: "Snooze custom...", action: ActionCustomSnooze},
+		{label: locale.T("Active"), action: ActionSetActive, current: presence == "active" && !dndActive},
+		{label: locale.T("Away"), action: ActionSetAway, current: presence == "away" && !dndActive},
+		{label: locale.T("Snooze for 20 minutes"), action: ActionSnooze, minutes: 20},
+		{label: locale.T("Snooze for 1 hour"), action: ActionSnooze, minutes: 60},
+		{label: locale.T("Snooze for 2 hours"), action: ActionSnooze, minutes: 120},
+		{label: locale.T("Snooze for 4 hours"), action: ActionSnooze, minutes: 240},
+		{label: locale.T("Snooze for 8 hours"), action: ActionSnooze, minutes: 480},
+		{label: locale.T("Snooze for 24 hours"), action: ActionSnooze, minutes: 1440},
+		{label: locale.T("Snooze until tomorrow morning"), action: ActionSnooze, minutes: minutesUntilTomorrowMorning(time.Now())},
+		{label: locale.T("Snooze custom..."), action: ActionCustomSnooze},
 	}
 	if dndActive {
-		rows = append(rows, item{label: "End snooze / DND", action: ActionEndDND})
+		rows = append(rows, item{label: locale.T("End snooze / DND"), action: ActionEndDND})
 	}
 	return rows
 }
@@ -249,9 +250,9 @@ func (m Model) renderBox(termWidth int) string {
 	overlayWidth := boxWidth(termWidth)
 	innerWidth := overlayWidth - 4
 
-	titleText := "Status"
+	titleText := locale.T("Status")
 	if m.workspaceName != "" {
-		titleText = "Status — " + m.workspaceName
+		titleText = locale.T("Status") + " — " + m.workspaceName
 	}
 
 	list := chrome.List{Start: 0, End: len(m.filtered), Total: len(m.filtered)}
@@ -278,9 +279,9 @@ func (m Model) renderBox(termWidth int) string {
 
 	return chrome.Frame{
 		Title: titleText,
-		Input: chrome.FilterInput(s, m.query, "Type to filter…"),
+		Input: chrome.FilterInput(s, m.query, locale.T("Type to filter…")),
 		Body:  list.Rows(s, m.selected, rows),
-		Empty: "No matching options",
+		Empty: locale.T("No matching options"),
 	}.Render(s, overlayWidth)
 }
 
@@ -291,9 +292,9 @@ func (m Model) renderBox(termWidth int) string {
 func CustomSnoozeView(termWidth, termHeight int, background, query string) string {
 	s := messages.ChromeStyles()
 	box := chrome.Frame{
-		Title:  "Snooze for how many minutes?",
+		Title:  locale.T("Snooze for how many minutes?"),
 		Body:   []string{s.Input.Render(query + "█")},
-		Footer: s.Empty.Render("Enter to snooze · Esc to cancel"),
+		Footer: s.Empty.Render(locale.T("Enter to snooze · Esc to cancel")),
 	}.Render(s, boxWidth(termWidth))
 	return overlay.DimmedOverlay(termWidth, termHeight, background, box, 0.5)
 }

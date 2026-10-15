@@ -7,6 +7,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"unicode"
 
@@ -73,7 +74,7 @@ func slashUnsupported(name string) commandFunc {
 func slashOpen(name string) commandFunc {
 	return func(a *App, args commandArgs) tea.Cmd {
 		if strings.TrimSpace(args.Rest) == "" {
-			return a.refuseCommand(args.Origin, "Usage: "+name+" #channel")
+			return a.refuseCommand(args.Origin, locale.T("Usage: ")+name+" #channel")
 		}
 		channel := strings.TrimPrefix(args.Fields[0], "#")
 		if mentioned := slackfmt.MentionedChannels(args.Rest); len(mentioned) > 0 {
@@ -149,7 +150,7 @@ func channelResultOf(it core.ChannelFinderItem) channelfinder.ChannelResult {
 func slashMsg(name string) commandFunc {
 	return func(a *App, args commandArgs) tea.Cmd {
 		usage := func() tea.Cmd {
-			return a.refuseCommand(args.Origin, "Usage: "+name+" @someone [message]")
+			return a.refuseCommand(args.Origin, locale.T("Usage: ")+name+locale.T(" @someone [message]"))
 		}
 		if len(args.Fields) == 0 {
 			return usage()
@@ -158,14 +159,14 @@ func slashMsg(name string) commandFunc {
 		users := slackfmt.MentionedUserIDs(first)
 		if len(users) != 1 || first != "<@"+users[0]+">" {
 			if strings.HasPrefix(first, "@") {
-				return a.refuseCommand(args.Origin, "No one called "+first)
+				return a.refuseCommand(args.Origin, locale.T("No one called ")+first)
 			}
 			return usage()
 		}
 		// One open at a time: a second would supersede the first and
 		// drop its text.
 		if a.openingConversation() {
-			return a.refuseCommand(args.Origin, "Still opening a conversation; try again in a moment")
+			return a.refuseCommand(args.Origin, locale.T("Still opening a conversation; try again in a moment"))
 		}
 		text := strings.TrimLeftFunc(strings.TrimPrefix(args.Rest, first), unicode.IsSpace)
 		return a.openConversation([]string{users[0]}, msgPrefill{text: text, origin: args.Origin})

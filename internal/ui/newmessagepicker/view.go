@@ -2,6 +2,7 @@ package newmessagepicker
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"image/color"
 	"strings"
 
@@ -51,15 +52,15 @@ func (m Model) renderBox(termWidth int) string {
 	bg := styles.Background
 
 	f := chrome.Frame{
-		Title:  "New message",
+		Title:  locale.T("New message"),
 		Input:  m.renderInputRow(innerWidth, bg),
 		Body:   m.renderResultRows(s, innerWidth, bg),
 		Footer: m.renderFooter(innerWidth, bg),
 	}
 	if len(m.filtered) == 0 {
-		f.Empty = "No users available"
+		f.Empty = locale.T("No users available")
 		if m.query != "" {
-			f.Empty = fmt.Sprintf("No users match %q", m.query)
+			f.Empty = fmt.Sprintf(locale.T("No users match %q"), m.query)
 		}
 	}
 	return f.Render(s, overlayWidth)
@@ -87,7 +88,7 @@ func (m Model) renderInputRow(innerWidth int, bg color.Color) string {
 
 	queryStyle := lipgloss.NewStyle().Background(bg).Foreground(styles.TextPrimary)
 	if m.query == "" && len(m.selected) == 0 {
-		placeholder := lipgloss.NewStyle().Background(bg).Foreground(styles.TextMuted).Render("type a name…")
+		placeholder := lipgloss.NewStyle().Background(bg).Foreground(styles.TextMuted).Render(locale.T("type a name…"))
 		b.WriteString(placeholder)
 	} else {
 		b.WriteString(queryStyle.Render(m.query))
@@ -121,7 +122,7 @@ func (m Model) renderResultRows(s chrome.Styles, innerWidth int, bg color.Color)
 func (m Model) renderRow(u User, width int, highlight bool, bg color.Color) string {
 	name := u.DisplayName
 	if u.IsExternal {
-		name += " [ext]"
+		name += locale.T(" [ext]")
 	}
 
 	handle := ""
@@ -161,13 +162,13 @@ func (m Model) renderFooter(innerWidth int, bg color.Color) string {
 	left := lipgloss.NewStyle().
 		Background(bg).
 		Foreground(styles.TextMuted).
-		Render("space toggle  enter open  esc cancel")
+		Render(locale.T("space toggle  enter open  esc cancel"))
 
 	counterText := fmt.Sprintf("%d / %d", len(m.selected), MaxRecipients)
 	var counterStyle lipgloss.Style
 	if len(m.selected) >= MaxRecipients {
 		counterStyle = lipgloss.NewStyle().Background(bg).Foreground(styles.TextMuted).Italic(true)
-		counterText += "  MPIM limit reached"
+		counterText += locale.T("  MPIM limit reached")
 	} else {
 		counterStyle = lipgloss.NewStyle().Background(bg).Foreground(styles.TextMuted)
 	}

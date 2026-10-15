@@ -33,6 +33,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -275,12 +276,12 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, a.keys.ThemeSwitcher):
 		// Per-workspace scope. Header text shows the current
 		// workspace name.
-		header := "Theme for " + a.activeTeamName()
+		header := locale.T("Theme for ") + a.activeTeamName()
 		a.themeSwitcher.OpenWithScope(themeswitcher.ScopeWorkspace, header)
 		a.SetMode(ModeThemeSwitcher)
 		return nil
 	case key.Matches(msg, a.keys.ThemeSwitcherGlobal):
-		a.themeSwitcher.OpenWithScope(themeswitcher.ScopeGlobal, "Default theme for new workspaces")
+		a.themeSwitcher.OpenWithScope(themeswitcher.ScopeGlobal, locale.T("Default theme for new workspaces"))
 		a.SetMode(ModeThemeSwitcher)
 		return nil
 	case key.Matches(msg, a.keys.ThemeNext):
@@ -415,7 +416,7 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		keyStr := msg.String()
 		if len(keyStr) == 1 && keyStr[0] >= '1' && keyStr[0] <= '9' {
 			if a.compose.Uploading() || a.threadCompose.Uploading() {
-				return toastWithClear(a, "Upload in progress", 2*time.Second)
+				return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 			}
 			idx := int(keyStr[0] - '1') // 0-indexed
 			if idx < len(a.workspaceItems) && a.workspaceSvc != nil {
@@ -438,7 +439,7 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 func (a *App) jumpToUnread(dir int) tea.Cmd {
 	id, name, chType, ok := a.sidebar.NextUnread(a.activeChannelID, dir)
 	if !ok {
-		return toastWithClear(a, "No other unread channels", 2*time.Second)
+		return toastWithClear(a, locale.T("No other unread channels"), 2*time.Second)
 	}
 	a.sidebar.SelectByID(id)
 	return func() tea.Msg {

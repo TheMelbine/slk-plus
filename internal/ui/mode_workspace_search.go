@@ -12,6 +12,8 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"fmt"
+	"github.com/gammons/slk/internal/locale"
 
 	"github.com/gammons/slk/internal/ids"
 	"github.com/gammons/slk/internal/ui/searchresults"
@@ -54,7 +56,7 @@ func handleWorkspaceSearchMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		if !ok {
 			chName := item.ChannelName
 			return func() tea.Msg {
-				return ToastMsg{Text: "Not a member of #" + chName + " — join via ctrl+t to view"}
+				return ToastMsg{Text: fmt.Sprintf(locale.T("Not a member of #%s — join via ctrl+t to view"), chName)}
 			}
 		}
 		a.pendingLinkNav = &pendingLinkNav{Location: Location{

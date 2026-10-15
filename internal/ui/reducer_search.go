@@ -21,6 +21,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -49,7 +50,7 @@ var reduceSearch reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true // stale: modal closed or query changed
 		}
 		if m.Err != nil {
-			a.searchResults.SetError("Search failed: " + m.Err.Error())
+			a.searchResults.SetError(locale.T("Search failed: ") + m.Err.Error())
 			return nil, true
 		}
 		a.searchResults.SetHighlightTerms(workspaceHighlightTerms(m.Query))
@@ -98,7 +99,7 @@ func reduceChannelSearchResults(a *App, m ChannelSearchResultsMsg) tea.Cmd {
 		debuglog.General("ChannelSearchResultsMsg: channel=%s query=%q err=%v",
 			m.ChannelID, m.Query, m.Err)
 		a.clearActiveSearch()
-		return func() tea.Msg { return ToastMsg{Text: "Search failed"} }
+		return func() tea.Msg { return ToastMsg{Text: locale.T("Search failed")} }
 	}
 	if len(m.TSes) == 0 {
 		a.clearActiveSearch()
@@ -162,7 +163,7 @@ func (a *App) searchStep(delta int) tea.Cmd {
 	}
 	cmd := a.jumpToCurrentMatch()
 	if wrapped {
-		return tea.Batch(cmd, func() tea.Msg { return ToastMsg{Text: "Search wrapped"} })
+		return tea.Batch(cmd, func() tea.Msg { return ToastMsg{Text: locale.T("Search wrapped")} })
 	}
 	return cmd
 }

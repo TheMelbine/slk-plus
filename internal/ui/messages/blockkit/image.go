@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"github.com/gammons/slk/internal/locale"
 	"image"
 	"io"
 	"strings"
@@ -47,9 +48,9 @@ func urlCacheKey(url string) string {
 // missing cell metrics). Format: "[image] <url>".
 func renderImageFallback(url string) string {
 	if url == "" {
-		return mutedStyle().Render("[image] (no url)")
+		return mutedStyle().Render("[" + locale.T("image") + "] " + locale.T("(no url)"))
 	}
-	label := "[image] " + url
+	label := "[" + locale.T("image") + "] " + url
 	// OSC-8 hyperlink: \x1b]8;;URL\x1b\\LABEL\x1b]8;;\x1b\\
 	hyper := "\x1b]8;;" + url + "\x1b\\" + label + "\x1b]8;;\x1b\\"
 	return mutedStyle().Render(hyper)
@@ -249,7 +250,7 @@ func blockPlaceholder(target image.Point) []string {
 	}
 	if target.Y > 0 {
 		mid := target.Y / 2
-		label := "⏳ loading…"
+		label := "⏳ " + locale.T("loading…")
 		w := lipgloss.Width(label)
 		if w <= target.X {
 			leftPad := (target.X - w) / 2

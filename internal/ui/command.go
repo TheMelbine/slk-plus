@@ -10,6 +10,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"time"
 	"unicode"
@@ -78,7 +79,7 @@ func cmdCloseWindow(a *App, args commandArgs) tea.Cmd {
 // still blocks it.
 func cmdQuit(a *App, _ commandArgs) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	return tea.Quit
 }
@@ -125,7 +126,7 @@ func cmdDelMarks(a *App, args commandArgs) tea.Cmd {
 		}
 	}
 	if failed != "" {
-		return toastWithClear(a, "Failed to delete saved mark "+failed, 3*time.Second)
+		return toastWithClear(a, locale.T("Failed to delete saved mark ")+failed, 3*time.Second)
 	}
 	return nil
 }
@@ -177,7 +178,7 @@ func executeCommand(a *App, line string) tea.Cmd {
 				return fn(a, args)
 			}
 		}
-		return toastWithClear(a, "Unknown command: "+name, 2*time.Second)
+		return toastWithClear(a, locale.T("Unknown command: ")+name, 2*time.Second)
 	})
 }
 

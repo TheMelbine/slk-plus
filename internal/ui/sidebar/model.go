@@ -2,6 +2,7 @@ package sidebar
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"sort"
 	"strings"
 	"time"
@@ -1723,9 +1724,10 @@ func (m *Model) buildCache(width int) {
 	// Synthetic "Threads" row, always rendered at the very top of the sidebar
 	// (before any section). Selectable like a channel; the App layer activates
 	// the threads view when IsThreadsSelected() is true.
-	threadsLabel := " ⚑ Threads"
-	threadsCursor := cursorSelected + "⚑ Threads"
-	threadsActiveLabel := activeBorder + "⚑ Threads"
+	threadsText := "⚑ " + locale.T("Threads")
+	threadsLabel := " " + threadsText
+	threadsCursor := cursorSelected + threadsText
+	threadsActiveLabel := activeBorder + threadsText
 	if m.threadsUnread > 0 {
 		// Render "•N" as a single styled span so the dot glyph and the digits
 		// stay adjacent in the output (no ANSI reset splits them). Tests rely
@@ -1761,9 +1763,10 @@ func (m *Model) buildCache(width int) {
 	// Synthetic "Activity" row, rendered directly below the Threads row.
 	// Same treatment as the Threads row (see above): the App layer
 	// activates the Activity view when IsActivitySelected() is true.
-	activityLabel := " ◉ Activity"
-	activityCursor := cursorSelected + "◉ Activity"
-	activityActiveLabel := activeBorder + "◉ Activity"
+	activityText := "◉ " + locale.T("Activity")
+	activityLabel := " " + activityText
+	activityCursor := cursorSelected + activityText
+	activityActiveLabel := activeBorder + activityText
 	if m.activityUnread > 0 {
 		badge := " " + dotStyle.Render("•"+fmt.Sprintf("%d", m.activityUnread))
 		activityLabel += badge
@@ -2020,7 +2023,7 @@ func (m *Model) buildCache(width int) {
 	// "No channels" placeholder below the Threads row + separator so the
 	// Threads row remains globally visible even on an empty workspace.
 	if len(m.items) == 0 {
-		placeholder := styles.SectionHeader.Render("No channels")
+		placeholder := styles.SectionHeader.Render(locale.T("No channels"))
 		m.cacheRows = append(m.cacheRows, renderRow{
 			normal:   placeholder,
 			selected: placeholder,
@@ -2104,6 +2107,7 @@ func (m *Model) sectionDisplayMeta(sectionKey string) (name, emoji string) {
 // not create it. Filed separately; do not fix it inline here.
 func (m *Model) renderSectionHeaderLabel(name, cursor string, dotStyle lipgloss.Style, bgAnsi string) (string, string) {
 	displayName, emojiCode := m.sectionDisplayMeta(name)
+	displayName = locale.T(displayName)
 	emojiPrefix := ""
 	if emojiCode != "" {
 		// kyokomi/emoji.Sprint resolves :shortcode: to unicode; on

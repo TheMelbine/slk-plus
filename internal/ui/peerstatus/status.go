@@ -5,6 +5,7 @@
 package peerstatus
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"time"
 
@@ -126,15 +127,15 @@ func (s Status) GlyphWidth(now time.Time) int {
 func (s Status) Summary(now time.Time, layout string) string {
 	var parts []string
 	if s.InHuddle(now) {
-		parts = append(parts, HuddleGlyph+" In a huddle")
+		parts = append(parts, HuddleGlyph+" "+locale.T("In a huddle"))
 	}
 	if s.HasStatus(now) {
 		parts = append(parts, strings.TrimSpace(s.StatusGlyph(now)+" "+s.Text))
 	}
 	if s.InDND(now) {
-		dnd := DNDGlyph + " Do not disturb"
+		dnd := DNDGlyph + " " + locale.T("Do not disturb")
 		if !s.DNDEnd.IsZero() {
-			dnd += " until " + s.DNDEnd.Local().Format(layout)
+			dnd += locale.T(" until ") + s.DNDEnd.Local().Format(layout)
 		}
 		parts = append(parts, dnd)
 	}

@@ -11,6 +11,8 @@ package imgrender
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"image"
 	"io"
 	"strings"
@@ -165,7 +167,7 @@ func buildPlaceholder(name string, target image.Point) []string {
 		lines[i] = emptyRow
 	}
 
-	label := "⏳ Loading " + name + "..."
+	label := "⏳ " + fmt.Sprintf(locale.T("Loading %s..."), name)
 	labelW := lipgloss.Width(label)
 	if labelW > target.X {
 		// Truncate to fit. Use rune-safe slicing via a runes round-trip
@@ -449,9 +451,9 @@ func (r *Renderer) RenderBlock(att Block, channel, ts string, availWidth, baseRo
 func renderLegacyLine(att Block) string {
 	markerStyle := lipgloss.NewStyle().Foreground(styles.TextMuted).Bold(true)
 	urlStyle := lipgloss.NewStyle().Foreground(styles.Primary).Underline(true)
-	marker := "[File]"
+	marker := locale.T("[File]")
 	if att.Kind == "image" {
-		marker = "[Image]"
+		marker = locale.T("[Image]")
 	}
 	label := att.Name
 	if label == "" {

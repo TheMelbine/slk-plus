@@ -4,6 +4,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"image"
 	"log"
 	"maps"
@@ -944,7 +945,7 @@ func NewApp() *App {
 	// ThreadsViewActivatedMsg in handleChannelFinderMode below.
 	app.channelFinder.SetSyntheticItems([]core.ChannelFinderItem{{
 		ID:     channelfinder.ThreadsViewID,
-		Name:   "Threads",
+		Name:   locale.T("Threads"),
 		Type:   "threads",
 		Joined: true,
 	}})
@@ -1214,7 +1215,7 @@ func (a *App) walkNavCmd(step int) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
 		// Refused before Walk moves the cursor, so a refused walk
 		// does not skip an entry.
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	a.navHistory.UpdateCurrent(a.activeTeamID, a.currentPosition())
 
@@ -1345,7 +1346,7 @@ const noProfileToast = "No profile for this message"
 func (a *App) openUserProfile() tea.Cmd {
 	_, _, _, userID, _, ok := a.selectedMessageContext()
 	if !ok || userID == "" || strings.HasPrefix(userID, "B") {
-		return toastWithClear(a, noProfileToast, 2*time.Second)
+		return toastWithClear(a, locale.T(noProfileToast), 2*time.Second)
 	}
 
 	teamID := a.activeTeamID
@@ -1438,7 +1439,7 @@ func (a *App) copyMessageOfSelected() tea.Cmd {
 
 	text := messages.MessageTextSource(msg)
 	if text == "" {
-		return func() tea.Msg { return ToastMsg{Text: "Message has no text"} }
+		return func() tea.Msg { return ToastMsg{Text: locale.T("Message has no text")} }
 	}
 	n := len([]rune(text))
 	return tea.Batch(
@@ -1506,7 +1507,7 @@ func (a *App) openLinksOfSelected() tea.Cmd {
 	links := messages.MessageLinks(msg)
 	switch len(links) {
 	case 0:
-		return func() tea.Msg { return ToastMsg{Text: "No links in message"} }
+		return func() tea.Msg { return ToastMsg{Text: locale.T("No links in message")} }
 	case 1:
 		url := links[0].URL
 		return func() tea.Msg { return OpenLinkMsg{URL: url} }
@@ -1516,7 +1517,7 @@ func (a *App) openLinksOfSelected() tea.Cmd {
 			items[i] = linkpicker.Item{URL: l.URL, Label: l.Label, InApp: a.linkOpensInApp(l.URL)}
 		}
 		a.pickerKind = "links"
-		a.linkPicker.Open("Open link", items)
+		a.linkPicker.Open(locale.T("Open link"), items)
 		a.SetMode(ModeLinkPicker)
 		return nil
 	}
@@ -1546,7 +1547,7 @@ func (a *App) downloadFilesOfSelected() tea.Cmd {
 	}
 	switch len(files) {
 	case 0:
-		return func() tea.Msg { return ToastMsg{Text: "No files in message"} }
+		return func() tea.Msg { return ToastMsg{Text: locale.T("No files in message")} }
 	case 1:
 		att := files[0]
 		return func() tea.Msg { return DownloadFileMsg{Attachment: att} }
@@ -1561,7 +1562,7 @@ func (a *App) downloadFilesOfSelected() tea.Cmd {
 		}
 		a.pickerKind = "files"
 		a.pickerFiles = files
-		a.linkPicker.Open("Download file", items)
+		a.linkPicker.Open(locale.T("Download file"), items)
 		a.SetMode(ModeLinkPicker)
 		return nil
 	}
@@ -1585,7 +1586,7 @@ func (a *App) linkOpensInApp(rawURL string) bool {
 
 func (a *App) saveThreadToFile() tea.Cmd {
 	if a.focusedPanel != PanelThread {
-		return func() tea.Msg { return ToastMsg{Text: "Open a thread first"} }
+		return func() tea.Msg { return ToastMsg{Text: locale.T("Open a thread first")} }
 	}
 	if a.threadPanel.IsEmpty() {
 		return nil
@@ -1932,8 +1933,8 @@ func (a *App) maybeFetchOlderHistory(atTop bool) tea.Cmd {
 // accidental Ctrl+C in any mode never silently kills the app).
 func (a *App) openQuitConfirm() {
 	a.openConfirmPrompt(
-		"Quit slk?",
-		"All workspace connections will close.",
+		locale.T("Quit slk?"),
+		locale.T("All workspace connections will close."),
 		func() tea.Msg { return tea.Quit() },
 	)
 }
@@ -2069,7 +2070,7 @@ func (a *App) applyThreadBreadcrumb(channelID, channelType string) {
 // and openThreadForPermalink (parent reconstructed from cache/stub).
 func (a *App) openThreadPanel(parent messages.MessageItem, channelID, threadTS string) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	a.cancelEdit()
 	a.threadVisible = true
@@ -2310,7 +2311,7 @@ func (a *App) CloseThread() {
 // press or list reload).
 func (a *App) openSelectedThreadCmd(debounce bool) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	sum, ok := a.threadsView.SelectedSummary()
 	if !ok {
@@ -3087,7 +3088,7 @@ func (a *App) openURLCmd(url string) tea.Cmd {
 		}
 		if err := desktop.Open(url); err != nil {
 			log.Printf("browser launch failed: %v", err)
-			return ToastMsg{Text: "Failed to open link"}
+			return ToastMsg{Text: locale.T("Failed to open link")}
 		}
 		return nil
 	}
@@ -3098,18 +3099,18 @@ func (a *App) openURLCmd(url string) tea.Cmd {
 func (a *App) downloadFileCmd(att messages.Attachment) tea.Cmd {
 	return func() tea.Msg {
 		if a.files == nil {
-			return ToastMsg{Text: "File downloads unavailable"}
+			return ToastMsg{Text: locale.T("File downloads unavailable")}
 		}
 		path, err := a.files.Download(context.Background(), att.DownloadURL, att.Name)
 		if err != nil {
 			log.Printf("file download failed: %v", err)
-			return ToastMsg{Text: "Download failed: " + att.Name}
+			return ToastMsg{Text: locale.T("Download failed: ") + att.Name}
 		}
 		if err := a.desktop.Open(path); err != nil {
 			log.Printf("file open failed: %v", err)
-			return ToastMsg{Text: "Failed to open " + att.Name}
+			return ToastMsg{Text: locale.T("Failed to open ") + att.Name}
 		}
-		return ToastMsg{Text: "Downloaded " + att.Name}
+		return ToastMsg{Text: locale.T("Downloaded ") + att.Name}
 	}
 }
 
@@ -3363,7 +3364,7 @@ func (a *App) activeTeamName() string {
 	if a.activeTeamID != "" {
 		return a.activeTeamID
 	}
-	return "this workspace"
+	return locale.T("this workspace")
 }
 
 // activeWorkspaceDomain returns the slack.com subdomain of the active
@@ -3752,10 +3753,10 @@ func (a *App) submitWithAttachments(c *compose.Model) tea.Cmd {
 	// Second line of defence: both callers sit behind handleInsertMode's
 	// upload guard, so no key reaches this while an upload is in flight.
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	if a.editing.IsActive() {
-		return toastWithClear(a, "Cannot attach files to an edit (send a new message)", 3*time.Second)
+		return toastWithClear(a, locale.T("Cannot attach files to an edit (send a new message)"), 3*time.Second)
 	}
 	attachments := c.Attachments()
 	if len(attachments) == 0 {
@@ -3772,13 +3773,13 @@ func (a *App) submitWithAttachments(c *compose.Model) tea.Cmd {
 		threadTS = ""
 	}
 	if channelID == "" || a.files == nil {
-		return toastWithClear(a, "Cannot upload: no active channel", 2*time.Second)
+		return toastWithClear(a, locale.T("Cannot upload: no active channel"), 2*time.Second)
 	}
 
 	c.SetUploading(true)
 	cmds := []tea.Cmd{
 		teaCmd(a.files.Upload(channelID, threadTS, caption, attachments)),
-		toastWithClear(a, fmt.Sprintf("Uploading 0/%d…", len(attachments)), 30*time.Second),
+		toastWithClear(a, fmt.Sprintf(locale.T("Uploading 0/%d…"), len(attachments)), 30*time.Second),
 	}
 	return tea.Batch(cmds...)
 }
@@ -3828,7 +3829,7 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 	if imgBytes := a.desktop.ReadClipboard(core.ClipboardImage); len(imgBytes) > 0 {
 		if int64(len(imgBytes)) > maxAttachmentSize {
 			return true, toastWithClear(a,
-				fmt.Sprintf("Image too large (%s > 10 MB limit)", humanSize(int64(len(imgBytes)))),
+				fmt.Sprintf(locale.T("Image too large (%s > 10 MB limit)"), humanSize(int64(len(imgBytes)))),
 				3*time.Second,
 			)
 		}
@@ -3840,7 +3841,7 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 			Size:     int64(len(imgBytes)),
 		})
 		return true, toastWithClear(a,
-			fmt.Sprintf("Attached: %s (%s)", filename, humanSize(int64(len(imgBytes)))),
+			fmt.Sprintf(locale.T("Attached: %s (%s)"), filename, humanSize(int64(len(imgBytes)))),
 			2*time.Second,
 		)
 	}
@@ -3850,10 +3851,10 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 		info, err := a.desktop.Stat(path)
 		if err == nil && info.Mode().IsRegular() {
 			if info.Size() > maxAttachmentSize {
-				return true, toastWithClear(a, "File too large (>10 MB limit)", 3*time.Second)
+				return true, toastWithClear(a, locale.T("File too large (>10 MB limit)"), 3*time.Second)
 			}
 			if info.Size() == 0 {
-				return true, toastWithClear(a, "Empty file", 2*time.Second)
+				return true, toastWithClear(a, locale.T("Empty file"), 2*time.Second)
 			}
 			filename := filepath.Base(path)
 			target.AddAttachment(core.PendingAttachment{
@@ -3863,7 +3864,7 @@ func (a *App) tryAttachFromClipboard(target *compose.Model, pathCandidate string
 				Size:     info.Size(),
 			})
 			return true, toastWithClear(a,
-				fmt.Sprintf("Attached: %s (%s)", filename, humanSize(info.Size())),
+				fmt.Sprintf(locale.T("Attached: %s (%s)"), filename, humanSize(info.Size())),
 				2*time.Second,
 			)
 		}
@@ -3894,11 +3895,11 @@ func (a *App) beginEditOfSelected() tea.Cmd {
 	case PanelMessages:
 		stashed = a.compose.Value()
 		a.compose.SetValue(text)
-		a.compose.SetPlaceholderOverride("Editing message — Enter to save, Esc to cancel")
+		a.compose.SetPlaceholderOverride(locale.T("Editing message — Enter to save, Esc to cancel"))
 	case PanelThread:
 		stashed = a.threadCompose.Value()
 		a.threadCompose.SetValue(text)
-		a.threadCompose.SetPlaceholderOverride("Editing message — Enter to save, Esc to cancel")
+		a.threadCompose.SetPlaceholderOverride(locale.T("Editing message — Enter to save, Esc to cancel"))
 	}
 
 	a.editing.Begin(channelID, ts, panel, stashed)
@@ -4134,7 +4135,7 @@ func (a *App) beginDeleteOfSelected() tea.Cmd {
 	}
 
 	a.openConfirmPrompt(
-		"Delete message?",
+		locale.T("Delete message?"),
 		preview,
 		func() tea.Msg {
 			return DeleteMessageMsg{ChannelID: channelID, TS: ts}

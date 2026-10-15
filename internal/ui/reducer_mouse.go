@@ -31,6 +31,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -200,7 +201,7 @@ func reduceMouseClick(a *App, m tea.MouseClickMsg) tea.Cmd {
 	switch {
 	case x < a.layout.RailWidth():
 		if a.compose.Uploading() || a.threadCompose.Uploading() {
-			return toastWithClear(a, "Upload in progress", 2*time.Second)
+			return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 		}
 		// Workspace rail: clicking a workspace tile switches to
 		// that workspace (same code path as the 1-9 keybinds and

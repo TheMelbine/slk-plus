@@ -9,6 +9,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -59,16 +60,16 @@ func (a *App) windowBounds() wintree.Rect {
 // splitWindow creates a new window (cloning the focused window's
 // channel) and focuses it. The new window gets its own model, seeded
 // from the source so the clone shows the same history immediately.
-// Toasts "Not enough room" on refusal.
+// Toasts locale.T("Not enough room") on refusal.
 func (a *App) splitWindow(dir wintree.Dir) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	src := a.messagepane
 	srcCh, _ := a.wins.Channel(a.focusedWin)
 	id, err := a.wins.Split(a.focusedWin, dir, a.windowBounds())
 	if err != nil {
-		return toastWithClear(a, "Not enough room", 2*time.Second)
+		return toastWithClear(a, locale.T("Not enough room"), 2*time.Second)
 	}
 	m := a.newWindowModel(srcCh.Name)
 	m.SetChannel(srcCh.Name, a.presence.dmTopicFor(a, srcCh.ID))
@@ -89,14 +90,14 @@ func (a *App) splitWindow(dir wintree.Dir) tea.Cmd {
 }
 
 // closeWindow closes the focused window; focus falls to its neighbor.
-// Toasts "Cannot close last window" instead of ever quitting.
+// Toasts locale.T("Cannot close last window") instead of ever quitting.
 func (a *App) closeWindow() tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	next, err := a.wins.Close(a.focusedWin)
 	if err != nil {
-		return toastWithClear(a, "Cannot close last window", 2*time.Second)
+		return toastWithClear(a, locale.T("Cannot close last window"), 2*time.Second)
 	}
 	a.syncWinModels()
 	return a.focusWindow(next)
@@ -130,7 +131,7 @@ func (a *App) navigateWindow(nd wintree.NavDir) tea.Cmd {
 // activeChannelID). Per-window models mean no channel re-dispatch.
 func (a *App) focusWindow(id wintree.LeafID) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	if id == a.focusedWin {
 		return nil

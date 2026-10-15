@@ -8,7 +8,7 @@
 package threadsview
 
 import (
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"slices"
 	"strings"
 
@@ -513,7 +513,7 @@ func (m *Model) View(height, width int) string {
 	var bannerLine string
 	bodyHeight := height
 	if !m.subscriptionsAvailable {
-		bannerText := "Threads list unavailable — Slack subscription state could not be fetched. slk will retry on the next reconnect."
+		bannerText := locale.T("Threads list unavailable — Slack subscription state could not be fetched. slk will retry on the next reconnect.")
 		if w := lipgloss.Width(bannerText); w > width {
 			// Truncate to width.
 			runes := []rune(bannerText)
@@ -540,7 +540,7 @@ func (m *Model) View(height, width int) string {
 	// banner.
 	var body string
 	if len(m.summaries) == 0 {
-		empty := card.Muted().Render("no threads")
+		empty := card.Muted().Render(locale.T("no threads"))
 		body = lipgloss.Place(width, bodyHeight, lipgloss.Center, lipgloss.Center, empty)
 	} else {
 		// Every card is cardContentLines tall with a separator between
@@ -733,7 +733,7 @@ func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []str
 	// "(parent not loaded)" when the cache hasn't seen the parent yet.
 	var preview string
 	if s.ParentText == "" && s.ParentUserID == "" {
-		preview = card.Muted().Render("(parent not loaded)")
+		preview = card.Muted().Render(locale.T("(parent not loaded)"))
 	} else {
 		preview = messages.RenderSlackMarkdownWith(s.ParentText, messages.RenderSlackMarkdownOpts{
 			UserNames:    m.userNames,

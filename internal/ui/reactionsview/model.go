@@ -5,6 +5,7 @@
 package reactionsview
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"image/color"
 	"strconv"
 	"strings"
@@ -205,8 +206,8 @@ func (m *Model) renderBox(termWidth, termHeight int) string {
 	window := all[m.offset:end]
 
 	return chrome.Frame{
-		Title:  "Reactions",
+		Title:  locale.T("Reactions"),
 		Body:   window,
-		Footer: s.Footer.Render("\u2191/\u2193 scroll   esc close"),
+		Footer: s.Footer.Render("\u2191/\u2193 " + locale.T("scroll") + "   " + locale.T("esc close")),
 	}.Render(s, overlayWidth)
 }

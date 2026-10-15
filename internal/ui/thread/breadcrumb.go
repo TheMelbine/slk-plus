@@ -1,7 +1,7 @@
 package thread
 
 import (
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -13,7 +13,7 @@ import (
 )
 
 // breadcrumbHint is the right-aligned close hint on the breadcrumb row.
-const breadcrumbHint = "esc close"
+func breadcrumbHint() string { return locale.T("esc close") }
 
 // breadcrumbHintGap is the minimum run of spaces before the hint.
 const breadcrumbHintGap = 2
@@ -51,7 +51,7 @@ func renderBreadcrumb(width int, channelName, channelType, author string, replyC
 		return w
 	}
 
-	showHint := leftWidth()+breadcrumbHintGap+emojiutil.Width(breadcrumbHint) <= width
+	showHint := leftWidth()+breadcrumbHintGap+emojiutil.Width(breadcrumbHint()) <= width
 	if leftWidth() > width {
 		from = ""
 	}
@@ -80,9 +80,9 @@ func renderBreadcrumb(width int, channelName, channelType, author string, replyC
 	}
 	used := emojiutil.Width(left)
 	if showHint {
-		gap := width - used - emojiutil.Width(breadcrumbHint)
+		gap := width - used - emojiutil.Width(breadcrumbHint())
 		return left + bg.Render(strings.Repeat(" ", gap)) +
-			bg.Foreground(styles.TextMuted).Render(breadcrumbHint)
+			bg.Foreground(styles.TextMuted).Render(breadcrumbHint())
 	}
 	return left + bg.Render(strings.Repeat(" ", width-used))
 }

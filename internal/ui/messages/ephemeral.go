@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"github.com/gammons/slk/internal/ui/messages/blockkit"
 	"github.com/gammons/slk/internal/ui/styles"
 )
@@ -9,7 +10,7 @@ import (
 // message only the current user can see. Shared by the messages and
 // thread panes so the two cannot drift.
 func EphemeralLabel() string {
-	return styles.Timestamp.Render("Only visible to you")
+	return styles.Timestamp.Render(locale.T("Only visible to you"))
 }
 
 // ButtonAction is one pressable legacy button and the attachment it is on.
@@ -49,7 +50,7 @@ func HasButtonActions(msg MessageItem) bool {
 // still needs Slack.
 func InteractiveHint(msg MessageItem) string {
 	if msg.Ephemeral && HasButtonActions(msg) {
-		return "b to respond"
+		return locale.T("b to respond")
 	}
-	return "↗ open in Slack to interact"
+	return locale.T("↗ open in Slack to interact")
 }

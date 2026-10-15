@@ -16,7 +16,7 @@ func pad(s string, width int) string {
 
 // hinted places the close hint flush right of left at width cells.
 func hinted(left string, width int) string {
-	return pad(left, width-ansi.StringWidth(breadcrumbHint)) + breadcrumbHint
+	return pad(left, width-ansi.StringWidth(breadcrumbHint())) + breadcrumbHint()
 }
 
 func TestRenderBreadcrumb(t *testing.T) {
@@ -31,7 +31,7 @@ func TestRenderBreadcrumb(t *testing.T) {
 		want    string
 	}{
 		{"room for everything", 60, "general", "channel", "alice", 2, hinted(full, 60)},
-		{"hint fits exactly with a two-space gap", 52, "general", "channel", "alice", 2, full + "  " + breadcrumbHint},
+		{"hint fits exactly with a two-space gap", 52, "general", "channel", "alice", 2, full + "  " + breadcrumbHint()},
 		{"one short of the hint drops only the hint", 51, "general", "channel", "alice", 2, pad(full, 51)},
 		{"full crumb fits exactly", 41, "general", "channel", "alice", 2, full},
 		{"author dropped next", 40, "general", "channel", "alice", 2, pad("# general › Thread · 2 replies", 40)},

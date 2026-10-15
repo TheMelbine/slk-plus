@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"io"
 	"strings"
 	"time"
@@ -331,7 +332,7 @@ func RenderMessage(msg MessageItem, width int, rc *RenderContext, opt RenderOpti
 
 	var editedMark string
 	if opt.EditedMark && msg.IsEdited {
-		editedMark = " " + styles.Timestamp.Render("(edited)")
+		editedMark = " " + styles.Timestamp.Render(locale.T("(edited)"))
 	}
 
 	// Pre-attachment row count, so attachment rows can compute their
@@ -350,7 +351,7 @@ func RenderMessage(msg MessageItem, width int, rc *RenderContext, opt RenderOpti
 		preAttachmentRows++ // the ephemeral label occupies its own row
 	}
 	if opt.BroadcastLabel && msg.Subtype == "thread_broadcast" {
-		labelRows += styles.Timestamp.Render("\u21b3 replied to a thread") + "\n"
+		labelRows += styles.Timestamp.Render("\u21b3 "+locale.T("replied to a thread")) + "\n"
 		preAttachmentRows++ // the broadcast label occupies its own row
 	}
 	preAttachmentRows++ // username + ts row

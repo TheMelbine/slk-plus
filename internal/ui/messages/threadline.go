@@ -2,7 +2,7 @@ package messages
 
 import (
 	"fmt"
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"time"
 

@@ -13,6 +13,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strconv"
 	"time"
 
@@ -32,7 +33,7 @@ func handlePresenceCustomSnoozeMode(a *App, msg tea.KeyMsg) tea.Cmd {
 		a.presence.ClearSnoozeBuf()
 		a.SetMode(ModeNormal)
 		if err != nil || mins <= 0 {
-			return toastWithClear(a, "Invalid snooze duration", 2*time.Second)
+			return toastWithClear(a, locale.T("Invalid snooze duration"), 2*time.Second)
 		}
 		a.applyPresenceAction(presencemenu.ActionSnooze, mins)
 		return nil

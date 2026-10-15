@@ -1,6 +1,7 @@
 package channelfinder
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"sort"
 	"strings"
 	"time"
@@ -566,9 +567,9 @@ func (m Model) renderBox(termWidth int) string {
 	// overlay doesn't bleed through where individual styled fragments end.
 	bg := styles.Background
 
-	titleText := "Switch Channel"
+	titleText := locale.T("Switch Channel")
 	if m.forwarding {
-		titleText = "Forward message to…"
+		titleText = locale.T("Forward message to…")
 	}
 
 	start, end := m.visibleWindow()
@@ -637,11 +638,11 @@ func (m Model) renderBox(termWidth int) string {
 
 	f := chrome.Frame{
 		Title: titleText,
-		Input: chrome.FilterInput(s, m.query, "Type to filter..."),
+		Input: chrome.FilterInput(s, m.query, locale.T("Type to filter...")),
 		Body:  list.Rows(s, m.selected, rows),
 	}
 	if m.query != "" {
-		f.Empty = "No matching channels"
+		f.Empty = locale.T("No matching channels")
 	}
 	return f.Render(s, overlayWidth)
 }

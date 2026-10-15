@@ -10,6 +10,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -32,7 +33,7 @@ func handleMarksMode(a *App, msg tea.KeyMsg) tea.Cmd {
 			// marks; the list is repopulated without the removed row.
 			if err := a.marks.Delete(a.activeTeamID, result.Delete); err != nil {
 				a.refreshMarksOverlay()
-				return toastWithClear(a, "Failed to delete saved mark "+result.Delete, 3*time.Second)
+				return toastWithClear(a, locale.T("Failed to delete saved mark ")+result.Delete, 3*time.Second)
 			}
 			return a.refreshMarksOverlay()
 		}

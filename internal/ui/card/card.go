@@ -8,7 +8,7 @@
 package card
 
 import (
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"slices"
 	"strconv"
 	"strings"

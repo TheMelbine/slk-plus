@@ -24,6 +24,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -217,9 +218,9 @@ func (b *workspaceBootstrap) Render(width, height int, spinnerGlyph string) stri
 		case "ready":
 			rows = append(rows, lipgloss.NewStyle().Foreground(styles.Accent).Render("✓")+" "+entry.TeamName)
 		case "failed":
-			rows = append(rows, lipgloss.NewStyle().Foreground(styles.Error).Render("✗")+" "+entry.TeamName+" (failed)")
+			rows = append(rows, lipgloss.NewStyle().Foreground(styles.Error).Render("✗")+" "+entry.TeamName+locale.T(" (failed)"))
 		default:
-			rows = append(rows, lipgloss.NewStyle().Foreground(styles.Primary).Render(spinnerGlyph)+" Connecting to "+entry.TeamName+"...")
+			rows = append(rows, lipgloss.NewStyle().Foreground(styles.Primary).Render(spinnerGlyph)+" "+locale.T("Connecting to ")+entry.TeamName+"...")
 		}
 	}
 

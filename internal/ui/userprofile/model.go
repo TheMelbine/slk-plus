@@ -11,7 +11,8 @@ package userprofile
 import (
 	"context"
 	"errors"
-	"strconv"
+	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	"github.com/gammons/slk/internal/bubbles/chrome"
@@ -138,10 +139,10 @@ func errorLine(err error) string {
 	var rl *core.RateLimitedError
 	if errors.As(err, &rl) {
 		secs := int(rl.RetryAfter.Round(time.Second) / time.Second)
-		return "Rate limited \u2014 try again in " + strconv.Itoa(secs) + "s"
+		return fmt.Sprintf(locale.T("Rate limited \u2014 try again in %ds"), secs)
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return "Couldn't load full profile: timed out"
+		return locale.T("Couldn't load full profile: timed out")
 	}
-	return "Couldn't load full profile: " + err.Error()
+	return locale.T("Couldn't load full profile: ") + err.Error()
 }

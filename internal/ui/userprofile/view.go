@@ -1,6 +1,7 @@
 package userprofile
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -27,7 +28,7 @@ const detailLabelWidth = 12
 const CopyIcon = "\U0001F4CB" // 📋
 
 // copyFooter is the footer while there is an email to copy.
-const copyFooter = "e copy email \u00b7 K / esc / q close"
+const copyFooter = "e copy email \u00b7 K / esc / q close" // translated at render
 
 // boxLayout is one rendered box and where its copy icon landed, in
 // box-local cells (border included); iconRow is -1 when no icon was
@@ -133,9 +134,9 @@ func (m *Model) layout(termW, termH int, live Live) boxLayout {
 	statusRows := m.statusRows(innerW, live)
 	detailRows, emailIdx, emailIconCol := m.detailRows(innerW, live)
 
-	footerText := "K / esc / q close"
+	footerText := locale.T("K / esc / q close")
 	if emailIdx >= 0 {
-		footerText = copyFooter
+		footerText = locale.T(copyFooter)
 	}
 	footer := lipgloss.NewStyle().
 		Background(bg).
@@ -197,7 +198,7 @@ func (m *Model) layout(termW, termH int, live Live) boxLayout {
 
 	s := messages.ChromeStyles()
 	s.Box = s.Box.Padding(0, 1) // the card's own padding
-	box := chrome.Frame{Title: "Profile", Body: body, Footer: footer}.Render(s, boxW)
+	box := chrome.Frame{Title: locale.T("Profile"), Body: body, Footer: footer}.Render(s, boxW)
 
 	l := boxLayout{box: box, iconRow: -1}
 	if iconBodyIdx >= 0 {
@@ -258,7 +259,7 @@ func (m *Model) nameRows(innerW int, live Live) []string {
 func (m *Model) line2Text() string {
 	if m.state == stateLoading {
 		if m.seed.IsExternal {
-			return "external"
+			return locale.T("external")
 		}
 		return ""
 	}
@@ -279,13 +280,13 @@ func (m *Model) line2Text() string {
 		parts = append(parts, head)
 	}
 	if m.profile.IsBot {
-		parts = append(parts, "APP")
+		parts = append(parts, locale.T("APP"))
 	}
 	if m.seed.IsExternal {
-		parts = append(parts, "external")
+		parts = append(parts, locale.T("external"))
 	}
 	if m.profile.Deleted {
-		parts = append(parts, "deactivated")
+		parts = append(parts, locale.T("deactivated"))
 	}
 	return strings.Join(parts, "  ")
 }
@@ -311,16 +312,16 @@ func (m *Model) statusRows(innerW int, live Live) []string {
 
 	var rows []string
 	if st.InHuddle(now) {
-		rows = append(rows, style.Render(padLeftTo(fit(peerstatus.HuddleGlyph+" In a huddle", innerW), innerW)))
+		rows = append(rows, style.Render(padLeftTo(fit(peerstatus.HuddleGlyph+" "+locale.T("In a huddle"), innerW), innerW)))
 	}
 	if st.HasStatus(now) {
 		line := strings.TrimSpace(st.StatusGlyph(now) + " " + st.Text)
 		rows = append(rows, style.Render(padLeftTo(fit(line, innerW), innerW)))
 	}
 	if st.InDND(now) {
-		line := peerstatus.DNDGlyph + " Do not disturb"
+		line := peerstatus.DNDGlyph + " " + locale.T("Do not disturb")
 		if !st.DNDEnd.IsZero() {
-			line += " until " + st.DNDEnd.In(now.Location()).Format("3:04 PM")
+			line += locale.T(" until ") + st.DNDEnd.In(now.Location()).Format("3:04 PM")
 		}
 		rows = append(rows, style.Render(padLeftTo(fit(line, innerW), innerW)))
 	}
@@ -339,7 +340,7 @@ func (m *Model) detailRows(innerW int, live Live) (rows []string, emailIdx, icon
 
 	emailIdx = -1
 	if m.state == stateLoading {
-		return []string{mutedStyle.Render(padLeftTo(fit("Loading profile\u2026", innerW), innerW))}, -1, 0
+		return []string{mutedStyle.Render(padLeftTo(fit(locale.T("Loading profile\u2026"), innerW), innerW))}, -1, 0
 	}
 	if m.state == stateFailed {
 		return []string{mutedStyle.Render(padLeftTo(fit(errorLine(m.err), innerW), innerW))}, -1, 0
@@ -353,11 +354,11 @@ func (m *Model) detailRows(innerW int, live Live) (rows []string, emailIdx, icon
 		rows = append(rows, valueStyle.Render(padLeftTo(fit(line, innerW), innerW)))
 	}
 	if m.profile.TZ != "" {
-		addRow("Local time", formatLocalTime(live.Now, m.profile.TZOffset, m.profile.TZAbbrev))
+		addRow(locale.T("Local time"), formatLocalTime(live.Now, m.profile.TZOffset, m.profile.TZAbbrev))
 	}
 	if email := m.profile.Email; email != "" {
 		iconW := drawnWidth(CopyIcon)
-		head := fit(padLabel("Email", detailLabelWidth)+email, innerW-1-iconW)
+		head := fit(padLabel(locale.T("Email"), detailLabelWidth)+email, innerW-1-iconW)
 		if head != "" {
 			headW := drawnWidth(head)
 			emailIdx = len(rows)
@@ -366,10 +367,10 @@ func (m *Model) detailRows(innerW int, live Live) (rows []string, emailIdx, icon
 			rows = append(rows, valueStyle.Render(head+" "+CopyIcon+pad))
 		} else {
 			// Too narrow for the icon: plain row, nothing to click.
-			addRow("Email", email)
+			addRow(locale.T("Email"), email)
 		}
 	}
-	addRow("Phone", m.profile.Phone)
+	addRow(locale.T("Phone"), m.profile.Phone)
 	return rows, emailIdx, iconCol
 }
 

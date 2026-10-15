@@ -3,7 +3,7 @@ package messages
 import (
 	"bytes"
 	"fmt"
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"io"
 	"slices"
 	"strings"
@@ -1415,7 +1415,7 @@ func (m *Model) buildCacheStyles(width int) cacheStyles {
 	// full width -- so the app-layer border-assembly width invariant
 	// (ui.borderedTopPane) still holds. Padding here would be truncated by
 	// the scrollbar pass and break TestSelection_HighlightDoesNotCorrupt...
-	m.cacheMoreBelow = hintStyle.Render("  -- more below --")
+	m.cacheMoreBelow = hintStyle.Render("  " + locale.T("-- more below --"))
 	return cacheStyles{
 		wrap:        NewWrapStyles(m.focused),
 		spacerLines: []string{m.cacheSpacer},
@@ -1435,7 +1435,7 @@ func (m *Model) renderLoadingOlderHint(width int) string {
 	// the app-layer border assembly relies on (ui.borderedTopPane).
 	hintStyle := lipgloss.NewStyle().Background(styles.Background).Foreground(styles.TextMuted).Width(width)
 	frame := styles.SpinnerChars[m.spinnerFrame%len(styles.SpinnerChars)]
-	return hintStyle.Render("  " + string(frame) + " Loading older messages...")
+	return hintStyle.Render("  " + string(frame) + " " + locale.T("Loading older messages..."))
 }
 
 // entryPerfStats accumulates per-sub-step timing across a single
@@ -1639,7 +1639,7 @@ func (m *Model) buildCache(width int, keepPosition bool) {
 
 		// New message landmark: insert before the first unread message
 		if m.lastReadTS != "" && !newMsgLandmarkInserted && msg.TS > m.lastReadTS {
-			newStr := "── new ──"
+			newStr := "── " + locale.T("new") + " ──"
 			label := lipgloss.NewStyle().Background(styles.Background).Foreground(styles.Error).Bold(true).
 				Width(width).Align(lipgloss.Center).
 				Render(newStr)
@@ -1947,10 +1947,10 @@ func (m *Model) viewInternal(height, width int, applySelection bool) string {
 	m.list.SetHeight(msgAreaHeight, m.selected)
 
 	if len(m.messages) == 0 {
-		text := "No messages yet"
+		text := locale.T("No messages yet")
 		if m.loading {
 			frame := styles.SpinnerChars[m.spinnerFrame%len(styles.SpinnerChars)]
-			text = string(frame) + " Loading messages..."
+			text = string(frame) + " " + locale.T("Loading messages...")
 		}
 		empty := lipgloss.NewStyle().
 			Width(width).

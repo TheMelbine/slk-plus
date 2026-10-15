@@ -9,6 +9,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -40,7 +41,7 @@ func (a *App) handleMarkChord(msg tea.KeyMsg) tea.Cmd {
 func (a *App) setMark(letter string) tea.Cmd {
 	loc, ok := a.currentLocation()
 	if !ok {
-		return toastWithClear(a, "No message selected to mark", 2*time.Second)
+		return toastWithClear(a, locale.T("No message selected to mark"), 2*time.Second)
 	}
 	m := Mark{
 		Location: loc,
@@ -75,7 +76,7 @@ func (a *App) setMark(letter string) tea.Cmd {
 		}
 	}
 	if err := a.marks.Set(a.activeTeamID, letter, m); err != nil {
-		return toastWithClear(a, "Failed to save mark "+letter, 3*time.Second)
+		return toastWithClear(a, locale.T("Failed to save mark ")+letter, 3*time.Second)
 	}
 	return nil
 }

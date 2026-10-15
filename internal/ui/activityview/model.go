@@ -13,7 +13,7 @@
 package activityview
 
 import (
-	"github.com/gammons/slk/internal/ui/locale"
+	"github.com/gammons/slk/internal/locale"
 	"maps"
 	"slices"
 	"strings"
@@ -36,7 +36,7 @@ const (
 
 // reminderHint fills line 2 of a Slack reminder's card: the feed carries
 // no reminder text.
-const reminderHint = "Open Slack to see this reminder"
+func reminderHint() string { return locale.T("Open Slack to see this reminder") }
 
 // glyphStyle colours the leading type glyph. A read card keeps it muted
 // with the rest of the card; an unread one gets the type's colour, so the
@@ -461,9 +461,9 @@ func (m *Model) View(height, width int) string {
 	}
 
 	if len(m.items) == 0 {
-		msg := "no activity"
+		msg := locale.T("no activity")
 		if m.unreadOnly {
-			msg = "no unread activity"
+			msg = locale.T("no unread activity")
 		}
 		empty := card.Muted().Render(msg)
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, empty)
@@ -658,7 +658,7 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	// here (the message pane does the same via styles.MessageText). Only
 	// the foreground: a background would paint over the selection tint.
 	if it.Type == "saved_reminder" && preview == "" {
-		preview = card.Muted().Render(reminderHint)
+		preview = card.Muted().Render(reminderHint())
 	}
 	preview = strings.ReplaceAll(preview, "\n", " ")
 	if !it.IsUnread {
@@ -676,7 +676,7 @@ func (m *Model) renderCard(it core.ActivityItem, width int, selected bool) (stri
 	if isDMItem(it.Type) && preview != "" && m.selfUserID != "" && body.UserID == m.selfUserID {
 		// Outside textStyle: its closing reset would drop the body's
 		// text colour.
-		line2 += card.Muted().Render("You: ")
+		line2 += card.Muted().Render(locale.T("You: "))
 	}
 	line2 += textStyle.Render(preview)
 

@@ -49,6 +49,7 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/gammons/slk/internal/locale"
 
 	"github.com/gammons/slk/internal/debuglog"
 	"github.com/gammons/slk/internal/ids"
@@ -75,7 +76,7 @@ var reduceSend reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		for _, mm := range a.modelsForChannel(m.channelID) {
 			mm.AppendMessage(cloneMessageItem(m.message))
 		}
-		return func() tea.Msg { return ToastMsg{Text: "Message forwarded to " + m.destination} }, true
+		return func() tea.Msg { return ToastMsg{Text: locale.T("Message forwarded to ") + m.destination} }, true
 
 	case MessageSentMsg:
 		// The chat.postMessage HTTP response landed. If a

@@ -8,6 +8,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -29,10 +30,10 @@ func handleUserProfileMode(a *App, msg tea.KeyMsg) tea.Cmd {
 func copyProfileEmail(a *App) tea.Cmd {
 	email := a.userProfile.Email()
 	if email == "" {
-		return toastWithClear(a, "No email to copy", 2*time.Second)
+		return toastWithClear(a, locale.T("No email to copy"), 2*time.Second)
 	}
 	return tea.Batch(
 		a.clipboardWrite(email),
-		toastWithClear(a, "Copied email", 2*time.Second),
+		toastWithClear(a, locale.T("Copied email"), 2*time.Second),
 	)
 }

@@ -9,7 +9,10 @@
 package ui
 
 import (
+	"fmt"
 	"time"
+
+	"github.com/gammons/slk/internal/locale"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -53,13 +56,13 @@ func (a *App) handleJumpChord(msg tea.KeyMsg) tea.Cmd {
 func (a *App) jumpToMark(letter string) tea.Cmd {
 	m, ok, err := a.marks.Load(a.activeTeamID, letter)
 	if err != nil {
-		return toastWithClear(a, "Failed to read mark "+letter, 3*time.Second)
+		return toastWithClear(a, locale.T("Failed to read mark ")+letter, 3*time.Second)
 	}
 	if !ok {
-		return toastWithClear(a, "Mark "+letter+" is not set", 2*time.Second)
+		return toastWithClear(a, fmt.Sprintf(locale.T("Mark %s is not set"), letter), 2*time.Second)
 	}
 	if m.TeamID != ids.TeamID(a.activeTeamID) {
-		return toastWithClear(a, "Cross-workspace mark jumps are not supported", 3*time.Second)
+		return toastWithClear(a, locale.T("Cross-workspace mark jumps are not supported"), 3*time.Second)
 	}
 	// The departing location is captured before applyLocation because a
 	// same-channel jump completes in place and moves the selection — by
@@ -67,12 +70,12 @@ func (a *App) jumpToMark(letter string) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
 		// Refused before departing is captured, so the '' slot keeps
 		// pointing where it did.
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	departing := a.departurePosition()
 	cmd, ok := a.applyLocation(m.Location, false)
 	if !ok {
-		return toastWithClear(a, "Channel for mark "+letter+" is unavailable", 3*time.Second)
+		return toastWithClear(a, fmt.Sprintf(locale.T("Channel for mark %s is unavailable"), letter), 3*time.Second)
 	}
 	// Record the departure for the '' back-jump. Only a jump that
 	// actually navigates (not a refusal) departs anything.
@@ -92,14 +95,14 @@ func (a *App) takeBackJump() tea.Cmd {
 		return nil
 	}
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	departing := a.departurePosition()
 	cmd, ok := a.applyLocation(*a.backJump, false)
 	if !ok {
 		// The slot's channel no longer resolves: nothing navigates,
 		// so nothing is departed and the slot is retained.
-		return toastWithClear(a, "Back-jump channel is unavailable", 3*time.Second)
+		return toastWithClear(a, locale.T("Back-jump channel is unavailable"), 3*time.Second)
 	}
 	a.backJump = &departing
 	return cmd

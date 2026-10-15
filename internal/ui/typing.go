@@ -29,6 +29,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"sort"
 	"strings"
 	"time"
@@ -373,11 +374,11 @@ func botWorkingText(names []string) string {
 	case 0:
 		return ""
 	case 1:
-		return names[0] + " is working..."
+		return names[0] + locale.T(" is working...")
 	case 2:
-		return names[0] + " and " + names[1] + " are working..."
+		return names[0] + locale.T(" and ") + names[1] + locale.T(" are working...")
 	default:
-		return "Several apps are working..."
+		return locale.T("Several apps are working...")
 	}
 }
 
@@ -388,10 +389,10 @@ func typingIndicatorText(names []string) string {
 	case 0:
 		return ""
 	case 1:
-		return names[0] + " is typing..."
+		return names[0] + locale.T(" is typing...")
 	case 2:
-		return names[0] + " and " + names[1] + " are typing..."
+		return names[0] + locale.T(" and ") + names[1] + locale.T(" are typing...")
 	default:
-		return "Several people are typing..."
+		return locale.T("Several people are typing...")
 	}
 }

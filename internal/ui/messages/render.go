@@ -2,6 +2,7 @@ package messages
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"image/color"
 	"io"
 	"regexp"
@@ -158,9 +159,9 @@ func RenderAttachments(attachments []Attachment) string {
 func renderSingleAttachment(a Attachment) string {
 	markerStyle := lipgloss.NewStyle().Foreground(styles.TextMuted).Bold(true)
 	urlStyle := linkStyle()
-	marker := "[File]"
+	marker := locale.T("[File]")
 	if a.Kind == "image" {
-		marker = "[Image]"
+		marker = locale.T("[Image]")
 	}
 	label := a.Name
 	if label == "" {

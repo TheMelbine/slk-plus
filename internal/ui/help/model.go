@@ -5,6 +5,7 @@
 package help
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"reflect"
 	"sort"
 	"strings"
@@ -85,7 +86,7 @@ func FromKeyMap(km any) []Entry {
 		if h.Key == "" && h.Desc == "" {
 			continue
 		}
-		entries = append(entries, Entry{Key: h.Key, Desc: h.Desc})
+		entries = append(entries, Entry{Key: h.Key, Desc: locale.T(h.Desc)})
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		return strings.ToLower(entries[i].Desc) < strings.ToLower(entries[j].Desc)
@@ -285,11 +286,11 @@ func (m Model) renderBox(termWidth, termHeight int) string {
 	var inputLine string
 	switch {
 	case m.searching:
-		inputLine = chrome.FilterInput(s, m.query, "Type to filter...")
+		inputLine = chrome.FilterInput(s, m.query, locale.T("Type to filter..."))
 	case m.query != "":
-		inputLine = s.Empty.Render("filter: " + m.query)
+		inputLine = s.Empty.Render(locale.T("filter: ") + m.query)
 	default:
-		inputLine = s.Footer.Render("Press / to search")
+		inputLine = s.Footer.Render(locale.T("Press / to search"))
 	}
 
 	start, end := m.visibleWindow(termHeight)
@@ -335,7 +336,7 @@ func (m Model) renderBox(termWidth, termHeight int) string {
 		rows = append(rows, ks.Width(maxKeyWidth).Render(keyLabel)+" "+ds.Width(descBudget).Render(desc))
 	}
 
-	footer := s.Footer.Render("/ search   esc/q close")
+	footer := s.Footer.Render(locale.T("/ search   esc/q close"))
 	if m.footer != "" {
 		// Attribution sits at the very bottom of the modal, centered
 		// across the inner width and below the controls line.
@@ -343,13 +344,13 @@ func (m Model) renderBox(termWidth, termHeight int) string {
 	}
 
 	f := chrome.Frame{
-		Title:  "Keybindings",
+		Title:  locale.T("Keybindings"),
 		Input:  inputLine,
 		Body:   list.Rows(s, m.selected, rows),
 		Footer: footer,
 	}
 	if m.query != "" {
-		f.Empty = "No matching keybindings"
+		f.Empty = locale.T("No matching keybindings")
 	}
 	return f.Render(s, overlayWidth)
 }

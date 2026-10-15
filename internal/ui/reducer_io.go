@@ -30,9 +30,9 @@
 //
 //	statusbar.CopiedMsg               - "Copied N chars"
 //	statusbar.CopiedClearMsg          - 2/3s expiry tick
-//	statusbar.PermalinkCopiedMsg      - "Copied permalink"
-//	statusbar.PermalinkCopyFailedMsg  - "Failed to copy link"
-//	statusbar.MarkedUnreadMsg         - "Marked unread"
+//	statusbar.PermalinkCopiedMsg      - locale.T("Copied permalink")
+//	statusbar.PermalinkCopyFailedMsg  - locale.T("Failed to copy link")
+//	statusbar.MarkedUnreadMsg         - locale.T("Marked unread")
 //	statusbar.MarkUnreadFailedMsg     - "Mark unread failed: ..."
 //	statusbar.EditFailedMsg           - "Edit failed: ..."
 //	statusbar.EditNotOwnMsg           - "Can only edit your own..."
@@ -55,6 +55,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"path/filepath"
 	"strings"
 	"time"
@@ -116,7 +117,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		if m.N <= 0 {
 			return nil, true
 		}
-		return toastWithClear(a, fmt.Sprintf("Copied %d chars", m.N), 2*time.Second), true
+		return toastWithClear(a, fmt.Sprintf(locale.T("Copied %d chars"), m.N), 2*time.Second), true
 
 	case statusbar.CopiedClearMsg:
 		if m.Seq == a.statusbar.ToastSeq() {
@@ -126,75 +127,75 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 
 	case statusbar.PermalinkCopiedMsg:
 		_ = m
-		return toastWithClear(a, "Copied permalink", 2*time.Second), true
+		return toastWithClear(a, locale.T("Copied permalink"), 2*time.Second), true
 
 	case statusbar.PermalinkCopyFailedMsg:
 		_ = m
-		return toastWithClear(a, "Failed to copy link", 2*time.Second), true
+		return toastWithClear(a, locale.T("Failed to copy link"), 2*time.Second), true
 
 	case statusbar.MarkedUnreadMsg:
 		_ = m
-		return toastWithClear(a, "Marked unread", 2*time.Second), true
+		return toastWithClear(a, locale.T("Marked unread"), 2*time.Second), true
 
 	case statusbar.MarkUnreadFailedMsg:
-		return toastWithClear(a, "Mark unread failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Mark unread failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case statusbar.ChannelStarredMsg:
 		if m.Starred {
-			return toastWithClear(a, "Starred channel", 2*time.Second), true
+			return toastWithClear(a, locale.T("Starred channel"), 2*time.Second), true
 		}
-		return toastWithClear(a, "Unstarred channel", 2*time.Second), true
+		return toastWithClear(a, locale.T("Unstarred channel"), 2*time.Second), true
 
 	case statusbar.ChannelStarFailedMsg:
-		return toastWithClear(a, "Star failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Star failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case statusbar.ChannelNotifyLevelMsg:
-		return toastWithClear(a, "Notifications: "+notifyLevelLabel(m.Level), 2*time.Second), true
+		return toastWithClear(a, locale.T("Notifications: ")+notifyLevelLabel(m.Level), 2*time.Second), true
 
 	case statusbar.ChannelNotifyLevelFailedMsg:
-		return toastWithClear(a, "Notification change failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Notification change failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case statusbar.ThreadFollowedMsg:
 		if m.Following {
-			return toastWithClear(a, "Following thread", 2*time.Second), true
+			return toastWithClear(a, locale.T("Following thread"), 2*time.Second), true
 		}
-		return toastWithClear(a, "Unfollowed thread", 2*time.Second), true
+		return toastWithClear(a, locale.T("Unfollowed thread"), 2*time.Second), true
 
 	case statusbar.ThreadFollowFailedMsg:
-		return toastWithClear(a, "Follow failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Follow failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case statusbar.ThreadSavedMsg:
-		return toastWithClear(a, "Saved "+filepath.Base(m.Path), 2*time.Second), true
+		return toastWithClear(a, locale.T("Saved ")+filepath.Base(m.Path), 2*time.Second), true
 
 	case statusbar.ThreadSaveFailedMsg:
-		return toastWithClear(a, "Save failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Save failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case statusbar.EditFailedMsg:
-		return toastWithClear(a, "Edit failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Edit failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case editEmptyToastMsg:
 		_ = m
-		return toastWithClear(a, "Edit must have text (use D to delete)", 3*time.Second), true
+		return toastWithClear(a, locale.T("Edit must have text (use D to delete)"), 3*time.Second), true
 
 	case statusbar.DeleteFailedMsg:
-		return toastWithClear(a, "Delete failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Delete failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case statusbar.SendFailedMsg:
-		return toastWithClear(a, "Send failed: "+truncateReason(m.Reason, 40), 3*time.Second), true
+		return toastWithClear(a, locale.T("Send failed: ")+truncateReason(m.Reason, 40), 3*time.Second), true
 
 	case statusbar.EditNotOwnMsg:
 		_ = m
-		return toastWithClear(a, "Can only edit your own messages", 2*time.Second), true
+		return toastWithClear(a, locale.T("Can only edit your own messages"), 2*time.Second), true
 
 	case statusbar.DeleteNotOwnMsg:
 		_ = m
-		return toastWithClear(a, "Can only delete your own messages", 2*time.Second), true
+		return toastWithClear(a, locale.T("Can only delete your own messages"), 2*time.Second), true
 
 	case ToastMsg:
 		return toastWithClear(a, m.Text, 3*time.Second), true
 
 	case UploadProgressMsg:
-		toastUntilReplaced(a, fmt.Sprintf("Uploading %d/%d…", m.Done, m.Total))
+		toastUntilReplaced(a, fmt.Sprintf(locale.T("Uploading %d/%d…"), m.Done, m.Total))
 		return nil, true
 
 	case EditorFinishedMsg:
@@ -223,7 +224,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 				a.CloseThread()
 			}
 			return toastWithClear(a,
-				"Upload failed: "+truncateReason(m.Err.Error(), 40),
+				locale.T("Upload failed: ")+truncateReason(m.Err.Error(), 40),
 				3*time.Second,
 			), true
 		}
@@ -239,7 +240,7 @@ var reduceIO reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		if a.threadCloseAfterUpload {
 			a.CloseThread()
 		}
-		return toastWithClear(a, "Sent", 2*time.Second), true
+		return toastWithClear(a, locale.T("Sent"), 2*time.Second), true
 
 	case ConnectionStateMsg:
 		a.statusbar.SetConnectionState(statusbar.ConnectionState(m.State))
@@ -369,7 +370,7 @@ func reducePaste(a *App, m tea.PasteMsg) tea.Cmd {
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
 		// Same in-flight draft invariant as handleInsertMode: a paste
 		// must not alter the uploading composer's caption/attachments.
-		return toastWithClear(a, "Upload in progress", 2*time.Second)
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second)
 	}
 	if a.clipboardAvailable {
 		target := &a.compose
@@ -395,11 +396,11 @@ func reducePaste(a *App, m tea.PasteMsg) tea.Cmd {
 func notifyLevelLabel(level string) string {
 	switch level {
 	case "everything":
-		return "all new messages"
+		return locale.T("all new messages")
 	case "mentions_dms":
-		return "mentions only"
+		return locale.T("mentions only")
 	case "nothing":
-		return "nothing"
+		return locale.T("nothing")
 	}
 	return level
 }

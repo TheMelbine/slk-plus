@@ -30,6 +30,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -122,9 +123,9 @@ func (a *App) sendActivityRead(r *activityRead) tea.Cmd {
 // open, so acknowledge it by marking it read, and say why nothing
 // opened.
 func (a *App) activateUnopenableActivity(it core.ActivityItem) tea.Cmd {
-	text := "slk can't open this activity item yet"
+	text := locale.T("slk can't open this activity item yet")
 	if it.Type == "saved_reminder" {
-		text = "Reminder: open Slack to see it"
+		text = locale.T("Reminder: open Slack to see it")
 	}
 	toast := toastWithClear(a, text, 3*time.Second)
 	if !it.IsUnread {
@@ -219,11 +220,11 @@ var reduceActivity reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		}
 		a.activityView.SetItemRead(m.Key, r.confirmed)
 		a.sidebar.SetActivityUnreadCount(a.activityView.UnreadCount())
-		state := "unread"
+		text := locale.T("Couldn't mark activity item unread: ")
 		if m.Read {
-			state = "read"
+			text = locale.T("Couldn't mark activity item read: ")
 		}
-		return toastWithClear(a, "Couldn't mark activity item "+state+": "+m.Err.Error(), 3*time.Second), true
+		return toastWithClear(a, text+m.Err.Error(), 3*time.Second), true
 
 	case ActivitySelectedMsg:
 		// A switch landed between the selection and its delivery: the

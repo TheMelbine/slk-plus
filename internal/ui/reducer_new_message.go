@@ -26,6 +26,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -55,7 +56,7 @@ var reduceNewMessagePicker reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, boo
 		var keptDraft tea.Cmd
 		if prefill != "" && !a.compose.OfferDraft(a.activeTeamID, m.ChannelID, "", prefill) {
 			keptDraft = func() tea.Msg {
-				return ToastMsg{Text: "Kept your existing draft there; the /msg text was not added"}
+				return ToastMsg{Text: locale.T("Kept your existing draft there; the /msg text was not added")}
 			}
 		}
 		// An action dialog may already be up (it opened when /msg
@@ -98,7 +99,7 @@ var reduceNewMessagePicker reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, boo
 		a.newMessageInFlightID = 0
 		a.abandonMsgPrefill()
 		errText := m.Err.Error()
-		return func() tea.Msg { return ToastMsg{Text: "Open DM failed: " + errText} }, true
+		return func() tea.Msg { return ToastMsg{Text: locale.T("Open DM failed: ") + errText} }, true
 	}
 	return nil, false
 }

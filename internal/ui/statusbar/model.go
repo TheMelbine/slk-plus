@@ -3,6 +3,7 @@ package statusbar
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/locale"
 	"strings"
 	"time"
 
@@ -271,25 +272,25 @@ func (m Model) View(width int) string {
 			lipgloss.NewStyle().
 				Foreground(styles.Accent).
 				Background(styles.SurfaceDark).
-				Render("● Active"))
+				Render(locale.T("● Active")))
 	} else if m.presence == "away" {
 		rightParts = append(rightParts,
 			lipgloss.NewStyle().
 				Foreground(styles.TextMuted).
 				Background(styles.SurfaceDark).
-				Render("○ Away"))
+				Render(locale.T("○ Away")))
 	}
 
 	switch m.connState {
 	case StateConnected:
 		rightParts = append(rightParts,
-			lipgloss.NewStyle().Foreground(styles.Accent).Background(styles.SurfaceDark).Render("● Connected"))
+			lipgloss.NewStyle().Foreground(styles.Accent).Background(styles.SurfaceDark).Render(locale.T("● Connected")))
 	case StateConnecting:
 		rightParts = append(rightParts,
-			lipgloss.NewStyle().Foreground(styles.Warning).Background(styles.SurfaceDark).Render("● Connecting"))
+			lipgloss.NewStyle().Foreground(styles.Warning).Background(styles.SurfaceDark).Render(locale.T("● Connecting")))
 	case StateDisconnected:
 		rightParts = append(rightParts,
-			lipgloss.NewStyle().Foreground(styles.Error).Background(styles.SurfaceDark).Render("● Disconnected"))
+			lipgloss.NewStyle().Foreground(styles.Error).Background(styles.SurfaceDark).Render(locale.T("● Disconnected")))
 	}
 
 	// The :command prompt owns the left side while active (the

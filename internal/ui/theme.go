@@ -6,6 +6,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -68,7 +69,7 @@ func (a *App) cycleTheme(step int) tea.Cmd {
 		return nil
 	}
 	a.applyTheme(name)
-	toast := toastWithClear(a, "Theme: "+name, 2*time.Second)
+	toast := toastWithClear(a, locale.T("Theme: ")+name, 2*time.Second)
 	a.themeToastSeq = a.statusbar.ToastSeq()
 	if a.activeTeamID == "" {
 		return toast

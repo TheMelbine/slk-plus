@@ -63,6 +63,7 @@
 package ui
 
 import (
+	"github.com/gammons/slk/internal/locale"
 	"log"
 	"time"
 
@@ -200,7 +201,7 @@ var reduceChannels reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true // stale: user navigated away
 		}
 		if m.Err != nil || len(m.Messages) == 0 {
-			return func() tea.Msg { return ToastMsg{Text: "Failed to load history around message"} }, true
+			return func() tea.Msg { return ToastMsg{Text: locale.T("Failed to load history around message")} }, true
 		}
 		// Confirm the target is actually in the fetched window BEFORE
 		// replacing the buffer: a failed jump must keep the user's
@@ -214,7 +215,7 @@ var reduceChannels reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 			}
 		}
 		if !found {
-			return func() tea.Msg { return ToastMsg{Text: "Message not found in loaded history"} }, true
+			return func() tea.Msg { return ToastMsg{Text: locale.T("Message not found in loaded history")} }, true
 		}
 		a.messagepane.SetMessages(m.Messages)
 		a.messagepane.SelectByTS(m.TargetTS)
@@ -403,7 +404,7 @@ func reduceChannelSelected(a *App, m ChannelSelectedMsg) (tea.Cmd, bool) {
 	// empty position that still looks like a valid channel-level entry.
 	departing := a.currentPosition()
 	if a.compose.Uploading() || a.threadCompose.Uploading() {
-		return toastWithClear(a, "Upload in progress", 2*time.Second), false
+		return toastWithClear(a, locale.T("Upload in progress"), 2*time.Second), false
 	}
 	// Perf instrumentation: wall-clock the synchronous portion of the
 	// channel-switch reducer. This covers everything up to and including
