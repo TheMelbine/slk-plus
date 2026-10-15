@@ -13,6 +13,7 @@
 package activityview
 
 import (
+	"github.com/gammons/slk/internal/ui/locale"
 	"maps"
 	"slices"
 	"strings"
@@ -700,7 +701,7 @@ func (m *Model) contextLabel(it core.ActivityItem) string {
 	case verb == "":
 		name = fallbackVerb(it.Type)
 	case it.Type == "saved_reminder":
-		name = verb
+		name = locale.Reminder()
 	}
 	where := m.conversationLabel(it.ChannelID)
 	switch {
@@ -709,7 +710,7 @@ func (m *Model) contextLabel(it core.ActivityItem) string {
 	case where == "":
 		return card.Muted().Render(name)
 	default:
-		return card.Muted().Render(name+" in ") + where
+		return card.Muted().Render(name+locale.In()) + where
 	}
 }
 
@@ -761,7 +762,7 @@ func contextVerb(itemType string) string {
 // without this label it rendered as a blank row (issue #285).
 func fallbackVerb(itemType string) string {
 	if itemType == "" {
-		return "Unknown activity"
+		return locale.UnknownActivity()
 	}
 	s := strings.ReplaceAll(itemType, "_", " ")
 	return strings.ToUpper(s[:1]) + s[1:]

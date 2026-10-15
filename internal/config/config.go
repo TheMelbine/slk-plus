@@ -85,7 +85,10 @@ type General struct {
 type Appearance struct {
 	Theme           string `toml:"theme"`
 	TimestampFormat string `toml:"timestamp_format"`
-	ShowAvatars     bool   `toml:"show_avatars"`
+	// Language of the TUI's generated text (date labels, reply counts,
+	// relative times): "en" or "ru". Unknown values fall back to "en".
+	Language    string `toml:"language"`
+	ShowAvatars bool   `toml:"show_avatars"`
 	// ImageProtocol controls how inline images are rendered.
 	// One of: "auto", "kitty", "sixel", "halfblock", "off".
 	ImageProtocol string `toml:"image_protocol"`
@@ -226,6 +229,7 @@ func Default() Config {
 		Appearance: Appearance{
 			Theme:           "nord",
 			TimestampFormat: "3:04 PM",
+			Language:        "en",
 			ImageProtocol:   "auto",
 			MaxImageRows:    20,
 			MaxImageCols:    60,
@@ -283,6 +287,12 @@ func Load(path string) (Config, error) {
 	// back to the default. >= 1 to guarantee scroll progress per notch.
 	if cfg.Appearance.MouseWheelLines < 1 {
 		cfg.Appearance.MouseWheelLines = 3
+	}
+
+	// Clamp Language to the documented set {"en", "ru"}. Empty (unset)
+	// and any unrecognized value fall back to "en".
+	if cfg.Appearance.Language != "ru" {
+		cfg.Appearance.Language = "en"
 	}
 
 	// Clamp EmojiCells to the documented set {1, 2}. 0 (unset after a

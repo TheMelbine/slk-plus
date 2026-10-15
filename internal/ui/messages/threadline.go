@@ -2,6 +2,7 @@ package messages
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/ui/locale"
 	"strings"
 	"time"
 
@@ -48,13 +49,9 @@ func renderThreadLine(msg MessageItem, miniAvatar func(userID string) string, no
 			}
 		}
 	}
-	word := "replies"
-	if msg.ReplyCount == 1 {
-		word = "reply"
-	}
-	b.WriteString(styles.ThreadIndicator.Render(fmt.Sprintf("%d %s", msg.ReplyCount, word)))
+	b.WriteString(styles.ThreadIndicator.Render(locale.Replies(msg.ReplyCount)))
 	if when := lastReplyLabel(msg.LatestReply, now); when != "" {
-		b.WriteString(styles.Timestamp.Render("  Last reply " + when))
+		b.WriteString(styles.Timestamp.Render("  " + locale.LastReply(when)))
 	}
 	return b.String()
 }
@@ -69,27 +66,7 @@ func lastReplyLabel(ts string, now time.Time) string {
 	if !ok {
 		return ""
 	}
-	d := now.Sub(t)
-	unit := func(n int, name string) string {
-		if n != 1 {
-			name += "s"
-		}
-		return fmt.Sprintf("%d %s ago", n, name)
-	}
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return unit(int(d/time.Minute), "minute")
-	case d < 24*time.Hour:
-		return unit(int(d/time.Hour), "hour")
-	case d < 30*24*time.Hour:
-		return unit(int(d/(24*time.Hour)), "day")
-	case d < 365*24*time.Hour:
-		return unit(int(d/(30*24*time.Hour)), "month")
-	default:
-		return unit(int(d/(365*24*time.Hour)), "year")
-	}
+	return locale.Ago(now.Sub(t))
 }
 
 // tsTime parses the seconds part of a Slack "1700000000.000100" ts.

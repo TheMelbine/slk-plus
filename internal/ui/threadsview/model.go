@@ -8,8 +8,8 @@
 package threadsview
 
 import (
+	"github.com/gammons/slk/internal/ui/locale"
 	"slices"
-	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -717,7 +717,7 @@ func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []str
 	}
 	left += card.Muted().Render(channelLabel(s) + " · " + replyCount(s))
 	if lastBy := m.resolveUser(s.LastReplyBy); lastBy != "" {
-		left += card.Muted().Render(" · last by " + lastBy)
+		left += card.Muted().Render(" · " + locale.LastBy(lastBy))
 	}
 	right := ""
 	if rel := card.RelTime(s.LastReplyTS); rel != "" {
@@ -766,8 +766,5 @@ func (m *Model) renderCard(s core.ThreadSummary, width int, selected bool) []str
 
 // replyCount is "N replies" / "1 reply".
 func replyCount(s core.ThreadSummary) string {
-	if s.ReplyCount == 1 {
-		return "1 reply"
-	}
-	return strconv.Itoa(s.ReplyCount) + " replies"
+	return locale.Replies(s.ReplyCount)
 }

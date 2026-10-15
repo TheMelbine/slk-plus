@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/gammons/slk/internal/ui/locale"
 	"regexp"
 	"strconv"
 	"strings"
@@ -120,9 +121,7 @@ func formatSearchTimestamp(ts, timeFormat string, now time.Time) string {
 	switch {
 	case ty == ny && tm == nm && td == nd:
 		return t.Format(timeFormat)
-	case ty == ny:
-		return t.Format("Jan 2, ") + t.Format(timeFormat)
 	default:
-		return t.Format("Jan 2 2006, ") + t.Format(timeFormat)
+		return locale.SearchDate(t, ty != ny) + t.Format(timeFormat)
 	}
 }

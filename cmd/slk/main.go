@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gammons/slk/internal/ui/locale"
 	"image"
 	"io"
 	"log"
@@ -234,6 +235,7 @@ func run() error {
 	// timestamp_format the message stamps use, so every clock in the
 	// TUI follows one setting.
 	messages.SetDateTokenTimeLayout(cfg.Appearance.TimestampFormat)
+	locale.Set(cfg.Appearance.Language)
 
 	// Load custom themes and apply the active theme
 	themesDir := filepath.Join(configDir, "themes")

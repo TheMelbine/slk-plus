@@ -8,6 +8,7 @@
 package card
 
 import (
+	"github.com/gammons/slk/internal/ui/locale"
 	"slices"
 	"strconv"
 	"strings"
@@ -180,17 +181,7 @@ func RelTime(ts string) string {
 	if err != nil {
 		return ""
 	}
-	d := time.Since(time.Unix(sec, 0))
-	switch {
-	case d < time.Minute:
-		return "now"
-	case d < time.Hour:
-		return strconv.Itoa(int(d/time.Minute)) + "m"
-	case d < 24*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + "h"
-	default:
-		return strconv.Itoa(int(d/(24*time.Hour))) + "d"
-	}
+	return locale.AgoShort(time.Since(time.Unix(sec, 0)))
 }
 
 // RecolorSGR swaps one foreground colour for another in every SGR escape

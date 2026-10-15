@@ -2,6 +2,7 @@ package messages
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/ui/locale"
 	"regexp"
 	"strconv"
 	"strings"
@@ -137,9 +138,15 @@ func formatSlackDateTokenIn(ts, format, fallback, raw string, loc *time.Location
 // slackDateFormat expands one Slack date token at t.
 func slackDateFormat(t time.Time, tok string) string {
 	if layout, ok := slackDateTokens[tok]; ok {
+		if locale.Current() != locale.EN && tok != "{date_num}" {
+			return localDateToken(t, tok)
+		}
 		return t.Format(layout)
 	}
 	day := t.Day()
+	if locale.Current() != locale.EN {
+		return localDateToken(t, tok)
+	}
 	switch tok {
 	case "{time}":
 		return t.Format(dateTokenTimeLayout)
@@ -151,6 +158,24 @@ func slackDateFormat(t time.Time, tok string) string {
 		return t.Format("January") + fmt.Sprintf(" %d%s, ", day, ordinalSuffix(day)) + t.Format("2006")
 	case "{date_long_pretty}":
 		return t.Format("Monday, January") + fmt.Sprintf(" %d%s, ", day, ordinalSuffix(day)) + t.Format("2006")
+	}
+	return tok
+}
+
+// localDateToken renders a date token in a non-English locale, where
+// ordinals do not apply: the pretty variants read like the plain ones.
+func localDateToken(t time.Time, tok string) string {
+	switch tok {
+	case "{date}", "{date_pretty}":
+		return locale.FullDate(t)
+	case "{date_short}", "{date_short_pretty}":
+		return locale.ShortDate(t, true)
+	case "{date_long}", "{date_long_pretty}":
+		return locale.LongDate(t)
+	case "{time}":
+		return t.Format(dateTokenTimeLayout)
+	case "{time_secs}":
+		return t.Format(timeLayoutWithSeconds(dateTokenTimeLayout))
 	}
 	return tok
 }

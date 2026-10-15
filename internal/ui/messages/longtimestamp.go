@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/gammons/slk/internal/ui/locale"
 	"github.com/gammons/slk/internal/ui/styles"
 )
 
@@ -31,11 +32,7 @@ func LongTimestamp(ts, short string) string {
 	if !ok {
 		return short
 	}
-	layout := "Mon Jan 2, "
-	if t.Year() != nowFunc().Year() {
-		layout = "Mon Jan 2 2006, "
-	}
-	return t.Format(layout) + short
+	return locale.HeaderDate(t, t.Year() != nowFunc().Year()) + short
 }
 
 // SelectedHeader returns rendered with the header's styled short

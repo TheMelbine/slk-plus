@@ -3,6 +3,7 @@ package messages
 import (
 	"bytes"
 	"fmt"
+	"github.com/gammons/slk/internal/ui/locale"
 	"io"
 	"slices"
 	"strings"
@@ -2181,13 +2182,10 @@ func FormatShortDate(dateStr string) string {
 	if err != nil {
 		return dateStr
 	}
-	if label := FormatDateSeparator(dateStr); !strings.Contains(label, ",") {
-		return label
+	if daysAgo(d, nowFunc()) < 7 {
+		return FormatDateSeparator(dateStr)
 	}
-	if d.Year() == nowFunc().Year() {
-		return d.Format("Jan 2")
-	}
-	return d.Format("Jan 2, 2006")
+	return locale.ShortDate(d, d.Year() != nowFunc().Year())
 }
 
 // FormatDateSeparator turns a "2006-01-02" date string into the
@@ -2200,25 +2198,16 @@ func FormatDateSeparator(dateStr string) string {
 	if err != nil {
 		return dateStr
 	}
-	// Compare calendar days, not elapsed time: both endpoints are anchored
-	// to UTC midnight so the delta is always a whole number of days.
-	now := nowFunc()
-	// time.Parse already yields UTC midnight; restating it is defensive, not
-	// load-bearing.
+	return locale.DaySeparator(d, daysAgo(d, nowFunc()))
+}
+
+// daysAgo counts calendar days from d to now. Both endpoints are
+// anchored to UTC midnight so the delta is always a whole number of
+// days; time.Parse already yields UTC midnight for d.
+func daysAgo(d, now time.Time) int {
 	dDay := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	days := int(today.Sub(dDay).Hours() / 24)
-
-	switch {
-	case days <= 0:
-		return "Today"
-	case days == 1:
-		return "Yesterday"
-	case days < 7:
-		return d.Format("Monday")
-	default:
-		return d.Format("Monday, January 2, 2006")
-	}
+	return int(today.Sub(dDay).Hours() / 24)
 }
 
 // summarizeMessageItems collapses a slice into a compact

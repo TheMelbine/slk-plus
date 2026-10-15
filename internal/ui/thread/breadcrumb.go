@@ -1,7 +1,7 @@
 package thread
 
 import (
-	"fmt"
+	"github.com/gammons/slk/internal/ui/locale"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -32,22 +32,16 @@ func renderBreadcrumb(width int, channelName, channelType, author string, replyC
 	if width <= 0 {
 		return ""
 	}
-	label := "replies"
-	if replyCount == 1 {
-		label = "reply"
-	}
-	const (
-		sep    = " › "
-		thread = "Thread"
-	)
-	count := fmt.Sprintf(" · %d %s", replyCount, label)
+	const sep = " › "
+	thread := locale.Thread()
+	count := " · " + locale.Replies(replyCount)
 	channel := ""
 	if channelName != "" {
 		channel = messages.ChannelGlyph(channelType) + " " + channelName
 	}
 	from := ""
 	if author != "" {
-		from = " from " + author
+		from = locale.From() + author
 	}
 	leftWidth := func() int {
 		w := emojiutil.Width(thread + from + count)
