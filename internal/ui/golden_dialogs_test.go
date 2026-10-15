@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/gammons/slk/internal/ui/reactionpicker"
 	"strings"
 	"testing"
 	"time"
@@ -279,7 +280,7 @@ func dialogGoldens() []dialogGolden {
 		{
 			name: "dialog_reaction_picker", want: "Add Reaction", shown: reactShown,
 			open: func(t *testing.T, a *App) {
-				a.reactionPicker.Open("C1", "1.0", []string{"smile"})
+				a.reactionPicker.Open("C1", "1.0", []reactionpicker.Existing{{Name: "smile", Mine: true}})
 				typeKeys(a.reactionPicker.HandleKey, "sm")
 				repeat(12, func() { a.reactionPicker.HandleKey("down") })
 				a.SetMode(ModeReactionPicker)

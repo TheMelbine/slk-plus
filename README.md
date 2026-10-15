@@ -23,6 +23,7 @@ A fork of [slk](https://github.com/gammons/slk) by Grant Ammons with changes I w
 
 - Hotkeys work on a Cyrillic keyboard layout, including the `?` cheatsheet and `:` commands (`:й` is `:q`); pickers and the command line accept non-ASCII input
 - `:q` closes the focused window and quits in the last one, `:qa` quits
+- The `r` reaction picker opens with the reactions already on the message (with counts, `✓` on yours), then your recently used emoji; Enter on someone else's reaction joins it
 
 **Rendering**
 

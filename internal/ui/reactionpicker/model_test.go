@@ -21,7 +21,7 @@ func TestNewModel(t *testing.T) {
 
 func TestOpenClose(t *testing.T) {
 	m := New()
-	m.Open("C123", "1234.5678", []string{"thumbsup"})
+	m.Open("C123", "1234.5678", []Existing{{Name: "thumbsup", Count: 1, Mine: true}})
 	if !m.IsVisible() {
 		t.Error("expected picker to be visible after Open")
 	}
@@ -108,7 +108,7 @@ func TestSelectEmoji(t *testing.T) {
 
 func TestSelectExistingReactionTogglesRemove(t *testing.T) {
 	m := New()
-	m.Open("C123", "1234.5678", []string{"rocket"})
+	m.Open("C123", "1234.5678", []Existing{{Name: "rocket", Count: 2, Mine: true}})
 	m.HandleKey("r")
 	m.HandleKey("o")
 	m.HandleKey("c")
@@ -122,6 +122,45 @@ func TestSelectExistingReactionTogglesRemove(t *testing.T) {
 	}
 	if !result.Remove {
 		t.Error("expected Remove=true for existing reaction")
+	}
+}
+
+func TestEmptyFilterListsMessageReactionsFirst(t *testing.T) {
+	m := New()
+	m.SetFrecentEmoji([]core.EmojiEntry{{Name: "heart", Unicode: "❤️"}, {Name: "fire", Unicode: "🔥"}})
+	m.Open("C1", "1.2", []Existing{
+		{Name: "eyes", Count: 3},
+		{Name: "fire", Count: 1, Mine: true},
+	})
+
+	got := m.displayedList()
+	want := []string{"eyes", "fire", "heart"}
+	if len(got) != len(want) {
+		t.Fatalf("list = %v, want %v", got, want)
+	}
+	for i, name := range want {
+		if got[i].Name != name {
+			t.Errorf("row %d = %q, want %q", i, got[i].Name, name)
+		}
+	}
+	if got[0].Unicode != "👀" {
+		t.Errorf("eyes unicode = %q, want 👀", got[0].Unicode)
+	}
+
+	// Enter on someone else's reaction joins it; on my own it removes.
+	if r := m.HandleKey("enter"); r == nil || r.Emoji != "eyes" || r.Remove {
+		t.Errorf("enter on eyes = %+v, want join", r)
+	}
+	m.Open("C1", "1.2", []Existing{{Name: "eyes", Count: 3}, {Name: "fire", Count: 1, Mine: true}})
+	m.HandleKey("down")
+	if r := m.HandleKey("enter"); r == nil || r.Emoji != "fire" || !r.Remove {
+		t.Errorf("enter on fire = %+v, want remove", r)
+	}
+
+	m.Open("C1", "1.2", []Existing{{Name: "eyes", Count: 3}, {Name: "fire", Count: 1, Mine: true}})
+	view := m.View(80)
+	if !strings.Contains(view, "eyes 3") || !strings.Contains(view, "fire 1 ✓") {
+		t.Errorf("view lacks counts/check:\n%s", view)
 	}
 }
 

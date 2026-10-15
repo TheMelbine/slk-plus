@@ -44,7 +44,7 @@
 | `Ctrl+t` / `Ctrl+p` | Any | Fuzzy channel finder |
 | `:ws` | Normal | Workspace picker |
 | `1`–`9` | Normal | Jump to workspace N |
-| `r` | Normal (message) | Open reaction picker |
+| `r` | Normal (message) | Open reaction picker: the message's own reactions first (count, `✓` on yours; Enter joins or removes), then recently used, type to search |
 | `R` | Normal (message) | Quick-toggle existing reactions |
 | `E` | Normal (message) | Edit your own message |
 | `D` | Normal (message) | Delete your own message (with confirmation) |

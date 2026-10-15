@@ -4,6 +4,7 @@ import (
 	"github.com/gammons/slk/internal/locale"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -24,17 +25,26 @@ type ReactionResult struct {
 	Remove bool   // true if toggling off an existing reaction
 }
 
+// Existing is a reaction already on the target message. Mine marks the
+// current user's own reactions (Enter removes them); the rest join.
+type Existing struct {
+	Name  string
+	Count int
+	Mine  bool
+}
+
 // Model is the reaction picker overlay.
 type Model struct {
 	allEmoji          []core.EmojiEntry
 	frecent           []core.EmojiEntry
 	filtered          []core.EmojiEntry
+	empty             []core.EmojiEntry // existing reactions, then frecent
 	query             string
 	selected          int
 	visible           bool
 	messageTS         string
 	channelID         string
-	existingReactions []string
+	existingReactions []Existing
 	emojiCtx          EmojiContext
 }
 
@@ -124,8 +134,10 @@ func (m *Model) SetCustomEmoji(customs map[string]string) {
 	}
 }
 
-// Open shows the picker for a specific message.
-func (m *Model) Open(channelID, messageTS string, existingReactions []string) {
+// Open shows the picker for a specific message. existingReactions are
+// the reactions already on it, in message order; they head the list
+// shown before any filter is typed.
+func (m *Model) Open(channelID, messageTS string, existingReactions []Existing) {
 	m.channelID = channelID
 	m.messageTS = messageTS
 	m.existingReactions = existingReactions
@@ -133,6 +145,38 @@ func (m *Model) Open(channelID, messageTS string, existingReactions []string) {
 	m.selected = 0
 	m.filtered = nil
 	m.visible = true
+	m.buildEmptyList()
+}
+
+// buildEmptyList assembles the unfiltered list: reactions already on
+// the message first, then frecent emoji not among them.
+func (m *Model) buildEmptyList() {
+	m.empty = m.empty[:0]
+	seen := make(map[string]bool, len(m.existingReactions))
+	for _, r := range m.existingReactions {
+		if r.Name == "" || seen[r.Name] {
+			continue
+		}
+		seen[r.Name] = true
+		m.empty = append(m.empty, core.EmojiEntry{Name: r.Name, Unicode: m.unicodeFor(r.Name)})
+	}
+	for _, e := range m.frecent {
+		if !seen[e.Name] {
+			m.empty = append(m.empty, e)
+		}
+	}
+}
+
+// unicodeFor returns the display form of a named emoji, or "" when the
+// name is unknown (custom emoji without a cached image fall back to the
+// shortcode in renderBox).
+func (m *Model) unicodeFor(name string) string {
+	for _, e := range m.allEmoji {
+		if e.Name == name {
+			return e.Unicode
+		}
+	}
+	return ""
 }
 
 // Close hides the picker and resets state.
@@ -151,6 +195,9 @@ func (m *Model) IsVisible() bool {
 // SetFrecentEmoji sets the frequently/recently used emoji list.
 func (m *Model) SetFrecentEmoji(entries []core.EmojiEntry) {
 	m.frecent = entries
+	if m.visible {
+		m.buildEmptyList()
+	}
 }
 
 // ChannelID returns the target channel.
@@ -214,10 +261,11 @@ func (m *Model) ClickRow(termWidth, termHeight, localY int) bool {
 	return true
 }
 
-// displayedList returns the list currently shown (frecent or filtered).
+// displayedList returns the list currently shown (existing+frecent or
+// filtered).
 func (m *Model) displayedList() []core.EmojiEntry {
 	if m.query == "" {
-		return m.frecent
+		return m.empty
 	}
 	return m.filtered
 }
@@ -248,13 +296,26 @@ func (m *Model) filter() {
 	m.selected = 0
 }
 
+// isExistingReaction reports whether the current user already reacted
+// with emojiName on the target message.
 func (m *Model) isExistingReaction(emojiName string) bool {
 	for _, r := range m.existingReactions {
-		if r == emojiName {
+		if r.Name == emojiName && r.Mine {
 			return true
 		}
 	}
 	return false
+}
+
+// reactionCount returns how many users reacted with emojiName on the
+// target message, 0 when none.
+func (m *Model) reactionCount(emojiName string) int {
+	for _, r := range m.existingReactions {
+		if r.Name == emojiName {
+			return r.Count
+		}
+	}
+	return 0
 }
 
 // HandleKey processes a key event and returns a result if an emoji was selected.
@@ -401,6 +462,9 @@ func (m *Model) renderBox(termWidth int) string {
 		}
 		line := preview + " " + entry.Name
 
+		if n := m.reactionCount(entry.Name); n > 0 {
+			line += " " + strconv.Itoa(n)
+		}
 		if m.isExistingReaction(entry.Name) {
 			line += " ✓"
 		}

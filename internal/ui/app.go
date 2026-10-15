@@ -1295,11 +1295,9 @@ func (a *App) openReactionPicker(p contentPane, channelID string) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	var existing []string
+	existing := make([]reactionpicker.Existing, 0, len(msg.Reactions))
 	for _, r := range msg.Reactions {
-		if r.HasReacted {
-			existing = append(existing, r.Emoji)
-		}
+		existing = append(existing, reactionpicker.Existing{Name: r.Emoji, Count: r.Count, Mine: r.HasReacted})
 	}
 	p.ExitReactionNav()
 	a.reactionPicker.SetFrecentEmoji(a.reactions.LoadFrecent(10))

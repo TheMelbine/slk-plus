@@ -49,6 +49,13 @@ func reactedMessage(reacted bool) []messages.MessageItem {
 
 const reactionTestUserID = "UME"
 
+// bareMessage is the fixture message without any reactions.
+func bareMessage() []messages.MessageItem {
+	m := reactedMessage(false)
+	m[0].Reactions = nil
+	return m
+}
+
 // reactionPickerOpts puts one reacted-to message in the active channel
 // so updateReactionOnMessage has a real target to mutate.
 func reactionPickerOpts(reacted bool) []testOpt {
@@ -91,9 +98,18 @@ func openReactionPicker(calls *reactionCalls, frecent ...string) func(*testing.T
 		if got := a.reactionPicker.MessageTS(); got != "1.0" {
 			t.Fatalf("precondition: picker MessageTS = %q, want %q", got, "1.0")
 		}
-		// BoxSize floors its row count at 1, so an empty frecent list
-		// still reports one row.
-		wantRows := len(frecent)
+		// The message's own reactions head the list (the fixture has
+		// one, "tada"); frecent entries follow unless already there.
+		wantRows := 0
+		if msgs := a.messagepane.Messages(); len(msgs) > 0 {
+			wantRows = len(msgs[0].Reactions)
+		}
+		for _, n := range frecent {
+			if n != "tada" {
+				wantRows++
+			}
+		}
+		// BoxSize floors its row count at 1.
 		if wantRows < 1 {
 			wantRows = 1
 		}
@@ -227,9 +243,12 @@ func TestReactionPickerModeKeys(t *testing.T) {
 		{
 			// The picker offers iamcal aliases; the handler stores the
 			// name Slack records. "thumbsup" is an alias of "+1".
-			name:     "the chosen emoji is canonicalised to its Slack name",
-			opts:     reactionPickerOpts(false),
-			setup:    openReactionPicker(&calls, "thumbsup"),
+			name: "the chosen emoji is canonicalised to its Slack name",
+			opts: reactionPickerOpts(false),
+			setup: func(t *testing.T, a *App) {
+				openReactionPicker(&calls, "thumbsup")(t, a)
+				a.reactionPicker.HandleKey("down") // past the message's own "tada"
+			},
 			key:      keyCode(tea.KeyEnter),
 			wantMode: ModeNormal,
 			assert: func(t *testing.T, a *App, cmd tea.Cmd) {
@@ -251,11 +270,35 @@ func TestReactionPickerModeKeys(t *testing.T) {
 			},
 		},
 		{
-			// displayedList() is the frecent list while the query is
-			// empty, so a picker opened with no frecency has nothing
-			// to commit and enter falls through the result==nil arm.
-			name:     "enter with an empty list is a no-op",
+			// Someone else's reaction heads the unfiltered list; enter
+			// on it joins rather than removes.
+			name:     "enter on another user's reaction joins it",
 			opts:     reactionPickerOpts(false),
+			setup:    openReactionPicker(&calls),
+			key:      keyCode(tea.KeyEnter),
+			wantMode: ModeNormal,
+			assert: func(t *testing.T, a *App, cmd tea.Cmd) {
+				if len(calls.frecent) != 1 || calls.frecent[0] != "tada" {
+					t.Errorf("RecordFrecent calls = %v, want [tada]", calls.frecent)
+				}
+				r, ok := reactionOn(a, "tada")
+				if !ok || !r.HasReacted || r.Count != 2 {
+					t.Errorf("tada reaction = %+v, want count 2 with HasReacted", r)
+				}
+				if cmd == nil {
+					t.Fatal("cmd = nil")
+				}
+				if msg, ok := cmd().(ReactionSentMsg); !ok || msg.Emoji != "tada" || msg.Remove {
+					t.Errorf("ReactionSentMsg = %#v, want add tada", cmd())
+				}
+			},
+		},
+		{
+			// With no reactions on the message and no frecency the
+			// unfiltered list is empty, so enter falls through the
+			// result==nil arm.
+			name:     "enter with an empty list is a no-op",
+			opts:     []testOpt{withActiveChannel("C1"), withMessages(bareMessage()...)},
 			setup:    openReactionPicker(&calls),
 			key:      keyCode(tea.KeyEnter),
 			wantMode: ModeReactionPicker,
