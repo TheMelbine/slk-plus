@@ -220,6 +220,15 @@ func (m *Model) RefreshStyles() {
 	m.input.SetStyles(s)
 }
 
+// RefreshPlaceholder re-renders the default placeholder, for a
+// language change; an override set by the caller is kept as is.
+func (m *Model) RefreshPlaceholder() {
+	if m.placeholderOverride == "" {
+		m.input.Placeholder = m.defaultPlaceholder()
+		m.dirty()
+	}
+}
+
 func (m *Model) SetChannel(name string) {
 	if m.channelName != name {
 		m.channelName = name

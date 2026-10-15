@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gammons/slk/internal/core"
+	"github.com/gammons/slk/internal/locale"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/gammons/slk/internal/ui/wintree"
@@ -121,5 +124,30 @@ func TestSplitCommandLine_UnicodeSpace(t *testing.T) {
 	}
 	if args.Rest != "a  b" || strings.Join(args.Fields, "|") != "a|b" {
 		t.Errorf("args = %+v, want Rest \"a  b\" and Fields [a b]", args)
+	}
+}
+
+func TestExecuteCommand_LangSwitchesAndSaves(t *testing.T) {
+	a := NewApp()
+	t.Cleanup(func() { locale.Set("en") })
+	var saved string
+	a.SetSettingsService(core.NewSettingsService(nil, nil, func(lang string) { saved = lang }))
+
+	_ = executeCommand(a, "lang ru")
+	if locale.Current() != locale.RU || saved != "ru" {
+		t.Fatalf("lang ru: current=%q saved=%q", locale.Current(), saved)
+	}
+	if out := a.statusbar.View(120); !strings.Contains(out, "Язык: ru") {
+		t.Fatalf("expected Russian toast, got:\n%s", out)
+	}
+
+	_ = executeCommand(a, "lang klingon")
+	if locale.Current() != locale.RU {
+		t.Fatal("unknown language must not change the current one")
+	}
+
+	_ = executeCommand(a, "lang en")
+	if locale.Current() != locale.EN || saved != "en" {
+		t.Fatalf("lang en: current=%q saved=%q", locale.Current(), saved)
 	}
 }

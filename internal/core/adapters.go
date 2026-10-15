@@ -615,13 +615,21 @@ func (p presenceAdapter) SendTyping(channelID string) {
 func NewSettingsService(
 	saveTheme func(teamID, name string, scope ThemeScope),
 	saveSidebarWidth func(width int),
+	saveLanguage func(lang string),
 ) SettingsService {
-	return settingsAdapter{saveTheme: saveTheme, saveSidebarWidth: saveSidebarWidth}
+	return settingsAdapter{saveTheme: saveTheme, saveSidebarWidth: saveSidebarWidth, saveLanguage: saveLanguage}
 }
 
 type settingsAdapter struct {
 	saveTheme        func(teamID, name string, scope ThemeScope)
 	saveSidebarWidth func(width int)
+	saveLanguage     func(lang string)
+}
+
+func (s settingsAdapter) SaveLanguage(lang string) {
+	if s.saveLanguage != nil {
+		s.saveLanguage(lang)
+	}
 }
 
 func (s settingsAdapter) SaveTheme(teamID, name string, scope ThemeScope) {

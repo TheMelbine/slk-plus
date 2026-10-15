@@ -397,6 +397,8 @@ type SettingsService interface {
 	// changes before the UI shows a switch. ThemeScopeGlobal ignores it.
 	SaveTheme(teamID, name string, scope ThemeScope)
 	SaveSidebarWidth(width int)
+	// SaveLanguage persists the interface language ("en" or "ru").
+	SaveLanguage(lang string)
 }
 
 // UnreadService reads the unread state the sidebar and workspace rail

@@ -672,7 +672,13 @@ func run() error {
 			log.Printf("save workspace sidebar width: %v", err)
 		}
 	}
-	app.SetSettingsService(core.NewSettingsService(saveTheme, saveSidebarWidth))
+	saveLanguage := func(lang string) {
+		cfg.Appearance.Language = lang
+		if err := saveAppearanceKey(configPath, "language", lang); err != nil {
+			log.Printf("save language: %v", err)
+		}
+	}
+	app.SetSettingsService(core.NewSettingsService(saveTheme, saveSidebarWidth, saveLanguage))
 
 	// Wire presence/DND status setter. Resolves the active team ID
 	// through the router at invocation so the closure always targets

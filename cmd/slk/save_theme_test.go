@@ -270,3 +270,19 @@ theme = "dracula"
 		t.Errorf("expected exactly one `theme = ` line, found %d:\n%s", count, s)
 	}
 }
+
+func TestSaveAppearanceKeyLanguage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[appearance]\ntheme = \"dark\"\nlanguage = \"en\"\n\n[workspaces.a]\ntheme = \"nord\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveAppearanceKey(path, "language", "ru"); err != nil {
+		t.Fatalf("saveAppearanceKey: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	got := string(data)
+	if !strings.Contains(got, `language = "ru"`) || !strings.Contains(got, `theme = "dark"`) || !strings.Contains(got, `theme = "nord"`) {
+		t.Errorf("unexpected rewrite:\n%s", got)
+	}
+}

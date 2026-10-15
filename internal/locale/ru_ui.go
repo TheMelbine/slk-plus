@@ -106,6 +106,8 @@ func init() {
 		"File too large (>10 MB limit)":                       "Файл слишком большой (лимит 10 МБ)",
 		"Empty file":                                          "Пустой файл",
 		"Attached: %s (%s)":                                   "Прикреплено: %s (%s)",
+		"Language: ":                                          "Язык: ",
+		"Unknown language: ":                                  "Неизвестный язык: ",
 		"Unknown command: ":                                   "Неизвестная команда: ",
 		"Failed to delete saved mark ":                        "Не удалось удалить метку ",
 		"Failed to save mark ":                                "Не удалось сохранить метку ",

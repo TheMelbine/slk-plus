@@ -50,6 +50,31 @@ var commands = map[string]commandFunc{
 	"only":     cmdOnlyWindow,
 	"on":       cmdOnlyWindow,
 	"activity": cmdActivity,
+	"lang":     cmdLanguage,
+}
+
+// cmdLanguage switches the interface language (":lang ru", ":lang en")
+// and saves it to config; ":lang" alone names the current one. Rendered
+// text lives in caches, so every pane is invalidated as on a theme
+// change.
+func cmdLanguage(a *App, args commandArgs) tea.Cmd {
+	if len(args.Fields) == 0 {
+		return toastWithClear(a, locale.T("Language: ")+string(locale.Current()), 2*time.Second)
+	}
+	want := strings.ToLower(args.Fields[0])
+	if want != string(locale.EN) && want != string(locale.RU) {
+		return toastWithClear(a, locale.T("Unknown language: ")+args.Fields[0]+" (en, ru)", 2*time.Second)
+	}
+	locale.Set(want)
+	a.invalidateAllWinModelCaches()
+	a.threadPanel.InvalidateCache()
+	a.sidebar.InvalidateCache()
+	a.compose.RefreshPlaceholder()
+	a.threadCompose.RefreshPlaceholder()
+	if a.settings != nil {
+		a.settings.SaveLanguage(want)
+	}
+	return toastWithClear(a, locale.T("Language: ")+want, 2*time.Second)
 }
 
 // cmdActivity opens the Activity view (mentions, thread replies,

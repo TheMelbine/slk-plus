@@ -24,11 +24,11 @@ func wireTypingSender(a *App, fn func(channelID string)) {
 }
 
 func wireThemeSaver(a *App, fn func(teamID, name string, scope core.ThemeScope)) {
-	a.SetSettingsService(core.NewSettingsService(fn, nil))
+	a.SetSettingsService(core.NewSettingsService(fn, nil, nil))
 }
 
 func wireWidthSaver(a *App, fn func(width int)) {
-	a.SetSettingsService(core.NewSettingsService(nil, fn))
+	a.SetSettingsService(core.NewSettingsService(nil, fn, nil))
 }
 
 func wireUploader(a *App, fn func(channelID, threadTS, caption string, atts []core.PendingAttachment) tea.Cmd) {

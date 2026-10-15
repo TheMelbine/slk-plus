@@ -130,6 +130,12 @@ func sanitizeComment(s string) string {
 // Existing comments and ordering are preserved (textual rewrite, not
 // TOML re-marshal).
 func saveGlobalTheme(configPath, themeName string) error {
+	return saveAppearanceKey(configPath, "theme", themeName)
+}
+
+// saveAppearanceKey rewrites one "key = ..." line of the [appearance]
+// section, appending the section when the file has none.
+func saveAppearanceKey(configPath, key, value string) error {
 	configWriteMu.Lock()
 	defer configWriteMu.Unlock()
 
@@ -157,14 +163,14 @@ func saveGlobalTheme(configPath, themeName string) error {
 		if !inAppearance {
 			continue
 		}
-		if strings.HasPrefix(trimmed, "theme") && strings.Contains(trimmed, "=") &&
-			!strings.HasPrefix(trimmed, "theme.") {
-			lines[i] = "theme = " + tomlString(themeName)
+		if strings.HasPrefix(trimmed, key) && strings.Contains(trimmed, "=") &&
+			!strings.HasPrefix(trimmed, key+".") {
+			lines[i] = key + " = " + tomlString(value)
 			return writeConfigAtomic(configPath, []byte(strings.Join(lines, "\n")))
 		}
 	}
-	// No [appearance] theme line found — append a new section.
-	lines = append(lines, "", "[appearance]", "theme = "+tomlString(themeName))
+	// No [appearance] line for key found — append a new section.
+	lines = append(lines, "", "[appearance]", key+" = "+tomlString(value))
 	return writeConfigAtomic(configPath, []byte(strings.Join(lines, "\n")))
 }
 
