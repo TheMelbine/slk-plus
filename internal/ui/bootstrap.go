@@ -225,9 +225,13 @@ func (b *workspaceBootstrap) Render(width, height int, spinnerGlyph string) stri
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	// Paint the interior too, or a translucent terminal shows through it.
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Primary).
+		BorderBackground(styles.SurfaceDark).
+		Background(styles.SurfaceDark).
+		Foreground(styles.TextPrimary).
 		Padding(1, 2).
 		Render(content)
 
